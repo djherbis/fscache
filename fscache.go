@@ -14,6 +14,9 @@ type Cache struct {
 	files map[string]*cachedFile
 }
 
+// New creates a new Cache based on directory dir.
+// Dir is created if it does not exist, and the files
+// in it are loaded into the cache using their filename as their key.
 func New(dir string) (*Cache, error) {
 	err := os.MkdirAll(dir, 0666)
 	if err != nil {
@@ -40,6 +43,13 @@ func (c *Cache) load() error {
 	return nil
 }
 
+// Get manages access to the streams in the cache.
+// If the key does not exist, ok = false, r will be nil and you can start
+// writing to the stream via w which must be closed once you finish streaming to it.
+// If ok = true, then the stream has started. w will be nil, and r will
+// allow you to read from the stream. Get is safe for concurrent calls, and
+// multiple concurrent readers are allowed. The stream readers will only block when waiting
+// for more data to be written to the stream, or the stream to be closed.
 func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, ok bool, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -56,18 +66,8 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, ok bool, err
 	return r, w, ok, err
 }
 
-func (c *Cache) Remove(key string) (err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if f, ok := c.files[key]; ok {
-		err = os.Remove(f.name)
-		delete(c.files, key)
-	}
-
-	return err
-}
-
+// Clean will empty the cache and delete the cache folder.
+// Clean is not safe to call while streams are being read/written.
 func (c *Cache) Clean() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -77,6 +77,7 @@ func (c *Cache) Clean() error {
 
 type cachedFile struct {
 	name string
+	grp  sync.WaitGroup
 	w    *os.File
 	b    *broadcaster
 }
@@ -101,9 +102,13 @@ func oldFile(key string) *cachedFile {
 
 func (f *cachedFile) next() (r io.ReadCloser, err error) {
 	r, err = os.Open(f.name)
+	if err == nil {
+		f.grp.Add(1)
+	}
 	return &cacheReader{
-		r: r,
-		b: f.b,
+		grp: &f.grp,
+		r:   r,
+		b:   f.b,
 	}, err
 }
 
@@ -120,8 +125,9 @@ func (f *cachedFile) Close() error {
 }
 
 type cacheReader struct {
-	r io.ReadCloser
-	b *broadcaster
+	r   io.ReadCloser
+	grp *sync.WaitGroup
+	b   *broadcaster
 }
 
 func (r *cacheReader) Read(p []byte) (n int, err error) {
@@ -154,5 +160,6 @@ func (r *cacheReader) Read(p []byte) (n int, err error) {
 }
 
 func (r *cacheReader) Close() error {
+	defer r.grp.Done()
 	return r.r.Close()
 }
