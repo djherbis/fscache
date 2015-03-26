@@ -49,7 +49,7 @@ func (c *Cache) load() error {
 // If ok = true, then the stream has started. w will be nil, and r will
 // allow you to read from the stream. Get is safe for concurrent calls, and
 // multiple concurrent readers are allowed. The stream readers will only block when waiting
-// for more data to be written to the stream, or the stream to be closed.
+// for more data to be written to the stream, or the stream to be closed (signified by io.EOF).
 func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, ok bool, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
