@@ -57,6 +57,7 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, ok bool, err
 	f, ok := c.files[key]
 	if !ok {
 		f, err = newFile(filepath.Join(c.dir, key))
+		f.grp.Add(1)
 		w = f
 		c.files[key] = f
 	} else {
@@ -64,6 +65,24 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, ok bool, err
 	}
 
 	return r, w, ok, err
+}
+
+// Remove will delete the specified stream after waiting for all
+// activity on it to stop (writer/readers closed).
+// Note that Remove also blocks calls to Get to prevent
+// the key from being requested while awaiting deletion.
+func (c *Cache) Remove(key string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	f, ok := c.files[key]
+	delete(c.files, key)
+
+	if ok {
+		f.grp.Wait()
+		return os.Remove(f.name)
+	}
+	return nil
 }
 
 // Clean will empty the cache and delete the cache folder.
@@ -84,11 +103,14 @@ type cachedFile struct {
 
 func newFile(key string) (*cachedFile, error) {
 	f, err := os.Create(key)
+	if err != nil {
+		return nil, err
+	}
 	return &cachedFile{
-		name: key,
+		name: f.Name(),
 		w:    f,
 		b:    newBroadcaster(),
-	}, err
+	}, nil
 }
 
 func oldFile(key string) *cachedFile {
@@ -120,6 +142,7 @@ func (f *cachedFile) Write(p []byte) (int, error) {
 }
 
 func (f *cachedFile) Close() error {
+	defer f.grp.Done()
 	defer f.b.Close()
 	return f.w.Close()
 }
