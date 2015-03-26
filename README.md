@@ -21,8 +21,8 @@ import (
 
 func main() {
 
-  // create the cache
-	c, err := fscache.New("./cache")
+  // create the cache, keys expire after 1 hour.
+	c, err := fscache.New("./cache", 1)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -32,18 +32,21 @@ func main() {
 
   // Get() and it's streams can be called concurrently but just for example:
 	for i := 0; i < 3; i++ {
-		r, w, ok, err := c.Get("stream")
+		r, w, err := c.Get("stream")
 		if err != nil {
 			log.Fatal(err.Error())
 		}
 
-		if ok { // the stream has started, read from it
-			io.Copy(os.Stdout, r)
-			r.Close()
-		} else { // a new stream, write to it
-			w.Write([]byte("hello world\n"))
-			w.Close()
+		if w != nil { // a new stream, write to it.
+			go func(){
+				w.Write([]byte("hello world\n"))
+				w.Close()
+			}()
 		}
+
+		// the stream has started, read from it
+		io.Copy(os.Stdout, r)
+		r.Close()
 	}
 }
 ```

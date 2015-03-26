@@ -6,27 +6,67 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
+	"time"
+)
+
+const (
+	expiryPeriod = time.Hour
+	reaperPeriod = time.Hour
 )
 
 type Cache struct {
-	mu    sync.Mutex
-	dir   string
-	files map[string]*cachedFile
+	mu     sync.Mutex
+	dir    string
+	expiry time.Duration
+	files  map[string]*cachedFile
 }
 
 // New creates a new Cache based on directory dir.
 // Dir is created if it does not exist, and the files
 // in it are loaded into the cache using their filename as their key.
-func New(dir string) (*Cache, error) {
+// expiry is the # of hours after which an un-accessed key will be
+// removed from the cache.
+func New(dir string, expiry int) (*Cache, error) {
 	err := os.MkdirAll(dir, 0666)
 	if err != nil {
 		return nil, err
 	}
 	c := &Cache{
-		dir:   dir,
-		files: make(map[string]*cachedFile),
+		dir:    dir,
+		expiry: time.Duration(expiry) * expiryPeriod,
+		files:  make(map[string]*cachedFile),
 	}
+	time.AfterFunc(reaperPeriod, c.reaper)
 	return c, c.load()
+}
+
+func (c *Cache) reaper() {
+	c.reap()
+	time.AfterFunc(reaperPeriod, c.reaper)
+}
+
+func (c *Cache) reap() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for key, f := range c.files {
+		if atomic.LoadInt64(&f.cnt) > 0 {
+			continue
+		}
+
+		fi, err := os.Stat(f.name)
+		if err != nil {
+			delete(c.files, key)
+			continue
+		}
+
+		if !time.Now().Add(-c.expiry).Before(fi.ModTime()) {
+			delete(c.files, key)
+			return os.Remove(f.name)
+		}
+	}
+	return nil
 }
 
 func (c *Cache) load() error {
@@ -50,39 +90,23 @@ func (c *Cache) load() error {
 // allow you to read from the stream. Get is safe for concurrent calls, and
 // multiple concurrent readers are allowed. The stream readers will only block when waiting
 // for more data to be written to the stream, or the stream to be closed (signified by io.EOF).
-func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, ok bool, err error) {
+func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	f, ok := c.files[key]
 	if !ok {
 		f, err = newFile(filepath.Join(c.dir, key))
-		f.grp.Add(1)
+		if err != nil {
+			return nil, nil, err
+		}
+		atomic.AddInt64(&f.cnt, 1)
 		w = f
 		c.files[key] = f
-	} else {
-		r, err = f.next()
 	}
+	r, err = f.next()
 
-	return r, w, ok, err
-}
-
-// Remove will delete the specified stream after waiting for all
-// activity on it to stop (writer/readers closed).
-// Note that Remove also blocks calls to Get to prevent
-// the key from being requested while awaiting deletion.
-func (c *Cache) Remove(key string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	f, ok := c.files[key]
-	delete(c.files, key)
-
-	if ok {
-		f.grp.Wait()
-		return os.Remove(f.name)
-	}
-	return nil
+	return r, w, err
 }
 
 // Clean will empty the cache and delete the cache folder.
@@ -96,7 +120,7 @@ func (c *Cache) Clean() error {
 
 type cachedFile struct {
 	name string
-	grp  sync.WaitGroup
+	cnt  int64
 	w    *os.File
 	b    *broadcaster
 }
@@ -125,10 +149,10 @@ func oldFile(key string) *cachedFile {
 func (f *cachedFile) next() (r io.ReadCloser, err error) {
 	r, err = os.Open(f.name)
 	if err == nil {
-		f.grp.Add(1)
+		atomic.AddInt64(&f.cnt, 1)
 	}
 	return &cacheReader{
-		grp: &f.grp,
+		cnt: &f.cnt,
 		r:   r,
 		b:   f.b,
 	}, err
@@ -142,14 +166,14 @@ func (f *cachedFile) Write(p []byte) (int, error) {
 }
 
 func (f *cachedFile) Close() error {
-	defer f.grp.Done()
+	defer func() { atomic.AddInt64(&f.cnt, -1) }()
 	defer f.b.Close()
 	return f.w.Close()
 }
 
 type cacheReader struct {
 	r   io.ReadCloser
-	grp *sync.WaitGroup
+	cnt *int64
 	b   *broadcaster
 }
 
@@ -183,6 +207,6 @@ func (r *cacheReader) Read(p []byte) (n int, err error) {
 }
 
 func (r *cacheReader) Close() error {
-	defer r.grp.Done()
+	defer func() { atomic.AddInt64(r.cnt, -1) }()
 	return r.r.Close()
 }
