@@ -61,7 +61,7 @@ func (c *Cache) reap() error {
 			continue
 		}
 
-		if !time.Now().Add(-c.expiry).Before(fi.ModTime()) {
+		if !time.Now().Add(-c.expiry).Before(atime(fi)) {
 			delete(c.files, key)
 			return os.Remove(f.name)
 		}
