@@ -15,6 +15,10 @@ func TestSanity(t *testing.T) {
 	defer c.Clean()
 
 	r, w, err := c.Get("stream")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
 	defer r.Close()
 
 	w.Write([]byte("hello world\n"))
