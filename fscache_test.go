@@ -4,10 +4,41 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 )
+
+func TestReload(t *testing.T) {
+	c, err := New("./cache5", 0700, 0)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	r, w, err := c.Get("stream")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	r.Close()
+	w.Write([]byte("hello world\n"))
+	w.Close()
+
+	nc, err := New("./cache5", 0700, 0)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer nc.Clean()
+
+	if !nc.Exists("stream") {
+		t.Errorf("expected stream to be reloaded")
+	} else {
+		nc.Remove("stream")
+		if nc.Exists("stream") {
+			t.Errorf("expected stream to be removed")
+		}
+	}
+}
 
 func TestReaper(t *testing.T) {
 	c, err := New("./cache1", 0700, 0)
@@ -32,8 +63,14 @@ func TestReaper(t *testing.T) {
 		t.Errorf("stream should have been reaped")
 	}
 
-	if _, err := os.Stat("./cache/stream"); !os.IsNotExist(err) {
-		t.Error(err)
+	files, err := ioutil.ReadDir("./cache1")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+
+	if len(files) > 0 {
+		t.Errorf("expected empty directory")
 	}
 }
 

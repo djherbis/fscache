@@ -1,6 +1,10 @@
 package fscache
 
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -11,6 +15,7 @@ import (
 )
 
 const (
+	prefixSize   = 8
 	expiryPeriod = time.Hour
 	reaperPeriod = time.Hour
 )
@@ -64,7 +69,6 @@ func (c *Cache) reap() error {
 
 		fi, err := os.Stat(f.name)
 		if err != nil {
-			delete(c.files, key)
 			continue
 		}
 
@@ -84,13 +88,43 @@ func (c *Cache) load() error {
 	if err != nil {
 		return err
 	}
+
+	modtimes := make(map[string]time.Time)
+
 	for _, f := range files {
-		c.files[f.Name()] = oldFile(filepath.Join(c.dir, f.Name()))
+		key := getKey(f.Name())
+		t, ok := modtimes[key]
+		if !ok || t.Before(f.ModTime()) {
+			if ok {
+				f, ok := c.files[key]
+				if ok {
+					f.Close()
+					os.Remove(f.name)
+				}
+			}
+			c.files[key] = oldFile(filepath.Join(c.dir, f.Name()))
+			modtimes[key] = f.ModTime()
+		}
 	}
 	return nil
 }
 
-// Exists checks if a key is in the cache
+func makeName(key string) string {
+	buf := bytes.NewBuffer(nil)
+	enc := base64.NewEncoder(base64.URLEncoding, buf)
+	io.CopyN(enc, rand.Reader, prefixSize)
+	return fmt.Sprintf("%s%s", buf.Bytes(), key)
+}
+
+func getKey(name string) (key string) {
+	if len(name) >= prefixSize {
+		key = name[prefixSize:]
+	}
+	return key
+}
+
+// Exists checks if a key is in the cache.
+// It is safe to call Exists concurrently with Get.
 func (c *Cache) Exists(key string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -109,10 +143,11 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 
 	f, ok := c.files[key]
 	if !ok {
-		f, err = newFile(filepath.Join(c.dir, key))
+		f, err = newFile(filepath.Join(c.dir, makeName(key)))
 		if err != nil {
 			return nil, nil, err
 		}
+		f.grp.Add(1)
 		atomic.AddInt64(&f.cnt, 1)
 		w = f
 		c.files[key] = f
@@ -120,6 +155,22 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 	r, err = f.next()
 
 	return r, w, err
+}
+
+// Remove deletes the stream from the cache, blocking until the underlying
+// file can be deleted (all active streams finish with it).
+// It is safe to call Remove concurrently with Get.
+func (c *Cache) Remove(key string) error {
+	c.mu.Lock()
+	f, ok := c.files[key]
+	delete(c.files, key)
+	c.mu.Unlock()
+
+	if ok {
+		f.grp.Wait()
+		return os.Remove(f.name)
+	}
+	return nil
 }
 
 // Clean will empty the cache and delete the cache folder.
@@ -134,12 +185,13 @@ func (c *Cache) Clean() error {
 type cachedFile struct {
 	name string
 	cnt  int64
+	grp  sync.WaitGroup
 	w    *os.File
 	b    *broadcaster
 }
 
-func newFile(key string) (*cachedFile, error) {
-	f, err := os.OpenFile(key, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+func newFile(name string) (*cachedFile, error) {
+	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -150,11 +202,11 @@ func newFile(key string) (*cachedFile, error) {
 	}, nil
 }
 
-func oldFile(key string) *cachedFile {
+func oldFile(name string) *cachedFile {
 	b := newBroadcaster()
 	b.Close()
 	return &cachedFile{
-		name: key,
+		name: name,
 		b:    b,
 	}
 }
@@ -162,9 +214,11 @@ func oldFile(key string) *cachedFile {
 func (f *cachedFile) next() (r io.ReadCloser, err error) {
 	r, err = os.Open(f.name)
 	if err == nil {
+		f.grp.Add(1)
 		atomic.AddInt64(&f.cnt, 1)
 	}
 	return &cacheReader{
+		grp: &f.grp,
 		cnt: &f.cnt,
 		r:   r,
 		b:   f.b,
@@ -179,6 +233,7 @@ func (f *cachedFile) Write(p []byte) (int, error) {
 }
 
 func (f *cachedFile) Close() error {
+	defer f.grp.Done()
 	defer func() { atomic.AddInt64(&f.cnt, -1) }()
 	defer f.b.Close()
 	return f.w.Close()
@@ -186,6 +241,7 @@ func (f *cachedFile) Close() error {
 
 type cacheReader struct {
 	r   io.ReadCloser
+	grp *sync.WaitGroup
 	cnt *int64
 	b   *broadcaster
 }
@@ -220,6 +276,7 @@ func (r *cacheReader) Read(p []byte) (n int, err error) {
 }
 
 func (r *cacheReader) Close() error {
+	defer r.grp.Done()
 	defer func() { atomic.AddInt64(r.cnt, -1) }()
 	return r.r.Close()
 }
