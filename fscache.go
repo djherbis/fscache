@@ -27,6 +27,7 @@ type Cache struct {
 // in it are loaded into the cache using their filename as their key.
 // expiry is the # of hours after which an un-accessed key will be
 // removed from the cache.
+// an expiry of 0 means never expire.
 func New(dir string, mode os.FileMode, expiry int) (*Cache, error) {
 	err := os.MkdirAll(dir, mode)
 	if err != nil {
@@ -41,7 +42,9 @@ func New(dir string, mode os.FileMode, expiry int) (*Cache, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.reaper()
+	if expiry > 0 {
+		c.reaper()
+	}
 	return c, nil
 }
 
