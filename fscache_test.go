@@ -4,9 +4,67 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func createFile(name string) (*os.File, error) {
+	return os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+}
+
+func TestLoadCleanup1(t *testing.T) {
+	os.Mkdir("./cache6", 0700)
+	f, err := createFile(filepath.Join("./cache6", "11111111test"))
+	if err != nil {
+		t.Error(err.Error())
+	}
+	f.Close()
+	<-time.After(time.Second)
+	f, err = createFile(filepath.Join("./cache6", "22222222test"))
+	if err != nil {
+		t.Error(err.Error())
+	}
+	f.Close()
+
+	c, err := New("./cache6", 0700, 0)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer c.Clean()
+
+	if !c.Exists("test") {
+		t.Errorf("expected test to exist")
+	}
+}
+
+func TestLoadCleanup2(t *testing.T) {
+	os.Mkdir("./cache7", 0700)
+	f, err := createFile(filepath.Join("./cache7", "22222222test"))
+	if err != nil {
+		t.Error(err.Error())
+	}
+	f.Close()
+	<-time.After(time.Second)
+	f, err = createFile(filepath.Join("./cache7", "11111111test"))
+	if err != nil {
+		t.Error(err.Error())
+	}
+	f.Close()
+
+	c, err := New("./cache7", 0700, 0)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer c.Clean()
+
+	if !c.Exists("test") {
+		t.Errorf("expected test to exist")
+	}
+}
 
 func TestReload(t *testing.T) {
 	c, err := New("./cache5", 0700, 0)
@@ -150,13 +208,13 @@ func TestConcurrent(t *testing.T) {
 
 	if c.Exists("stream") {
 		r, _, err := c.Get("stream")
-		defer r.Close()
 		if err != nil {
 			t.Error(err.Error())
 			return
 		}
 		buf := bytes.NewBuffer(nil)
 		io.Copy(buf, r)
+		r.Close()
 		if !bytes.Equal(buf.Bytes(), []byte("helloworld")) {
 			t.Errorf("unexpected output %s", buf.Bytes())
 		}

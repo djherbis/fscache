@@ -98,7 +98,6 @@ func (c *Cache) load() error {
 			if ok {
 				f, ok := c.files[key]
 				if ok {
-					f.Close()
 					os.Remove(f.name)
 				}
 			}
@@ -149,8 +148,6 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		f.grp.Add(1)
-		atomic.AddInt64(&f.cnt, 1)
 		w = f
 		c.files[key] = f
 	}
@@ -197,11 +194,14 @@ func newFile(name string) (*cachedFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &cachedFile{
+	cf := &cachedFile{
 		name: f.Name(),
 		w:    f,
 		b:    newBroadcaster(),
-	}, nil
+	}
+	cf.grp.Add(1)
+	atomic.AddInt64(&cf.cnt, 1)
+	return cf, nil
 }
 
 func oldFile(name string) *cachedFile {
