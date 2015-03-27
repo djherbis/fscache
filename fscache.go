@@ -37,8 +37,12 @@ func New(dir string, expiry int) (*Cache, error) {
 		expiry: time.Duration(expiry) * expiryPeriod,
 		files:  make(map[string]*cachedFile),
 	}
-	time.AfterFunc(reaperPeriod, c.reaper)
-	return c, c.load()
+	err = c.load()
+	if err != nil {
+		return nil, err
+	}
+	c.reaper()
+	return c, nil
 }
 
 func (c *Cache) reaper() {
