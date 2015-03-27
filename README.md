@@ -22,7 +22,7 @@ import (
 func main() {
 
 	// create the cache, keys expire after 1 hour.
-	c, err := fscache.New("./cache", 1)
+	c, err := fscache.New("./cache", 0755, 1)
 	if err != nil {
 		log.Fatal(err.Error())
 	}

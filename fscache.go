@@ -27,8 +27,8 @@ type Cache struct {
 // in it are loaded into the cache using their filename as their key.
 // expiry is the # of hours after which an un-accessed key will be
 // removed from the cache.
-func New(dir string, expiry int) (*Cache, error) {
-	err := os.MkdirAll(dir, 0666)
+func New(dir string, mode os.FileMode, expiry int) (*Cache, error) {
+	err := os.MkdirAll(dir, mode)
 	if err != nil {
 		return nil, err
 	}
