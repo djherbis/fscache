@@ -7,7 +7,7 @@ import (
 )
 
 func TestSanity(t *testing.T) {
-	c, err := New("./cache", 0666, 0)
+	c, err := New("./cache", 705, 0)
 	if err != nil {
 		t.Error(err.Error())
 		return
