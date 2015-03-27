@@ -104,6 +104,8 @@ func (c *Cache) load() error {
 			}
 			c.files[key] = oldFile(filepath.Join(c.dir, f.Name()))
 			modtimes[key] = f.ModTime()
+		} else {
+			os.Remove(f.Name())
 		}
 	}
 	return nil
