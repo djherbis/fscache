@@ -10,6 +10,7 @@ func TestSanity(t *testing.T) {
 	c, err := New("./cache", 0666, 0)
 	if err != nil {
 		t.Error(err.Error())
+		return
 	}
 	defer c.Clean()
 
@@ -23,6 +24,7 @@ func TestSanity(t *testing.T) {
 	_, err = io.Copy(buf, r)
 	if err != nil {
 		t.Error(err.Error())
+		return
 	}
 	if !bytes.Equal(buf.Bytes(), []byte("hello world\n")) {
 		t.Errorf("unexpected output %s", buf.Bytes())
