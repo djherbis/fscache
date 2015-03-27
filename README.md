@@ -4,6 +4,7 @@ fscache
 [![GoDoc](https://godoc.org/github.com/djherbis/fscache?status.svg)](https://godoc.org/github.com/djherbis/fscache)
 [![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE.txt)
 [![Build Status](https://travis-ci.org/djherbis/fscache.svg?branch=master)](https://travis-ci.org/djherbis/fscache)
+[![Coverage Status](https://coveralls.io/repos/djherbis/fscache/badge.svg?branch=master)](https://coveralls.io/r/djherbis/fscache?branch=master)
 
 Usage
 ------------
