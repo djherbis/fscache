@@ -1,6 +1,7 @@
 language: go
 go:
   - 1.4
+sudo: required
 script:
   - go test -v ./...
 notifications:
