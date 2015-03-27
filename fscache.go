@@ -16,7 +16,7 @@ const (
 )
 
 type Cache struct {
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	dir    string
 	expiry time.Duration
 	files  map[string]*cachedFile
@@ -83,13 +83,19 @@ func (c *Cache) load() error {
 	return nil
 }
 
+// Exists checks if a key is in the cache
+func (c *Cache) Exists(key string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.files[key]
+	return ok
+}
+
 // Get manages access to the streams in the cache.
-// If the key does not exist, ok = false, r will be nil and you can start
-// writing to the stream via w which must be closed once you finish streaming to it.
-// If ok = true, then the stream has started. w will be nil, and r will
-// allow you to read from the stream. Get is safe for concurrent calls, and
-// multiple concurrent readers are allowed. The stream readers will only block when waiting
-// for more data to be written to the stream, or the stream to be closed (signified by io.EOF).
+// If the key does not exist, w != nil and you can start writing to the stream.
+// If the key does exist, w == nil.
+// r will always be non-nil as long as err == nil and you must close r when you're done reading.
+// Get can be called concurrently, and writing and reading is concurrent safe.
 func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
