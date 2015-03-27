@@ -139,7 +139,7 @@ type cachedFile struct {
 }
 
 func newFile(key string) (*cachedFile, error) {
-	f, err := os.Create(key)
+	f, err := os.OpenFile(key, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return nil, err
 	}
