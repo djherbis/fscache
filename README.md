@@ -21,7 +21,7 @@ import (
 
 func main() {
 
-  // create the cache, keys expire after 1 hour.
+	// create the cache, keys expire after 1 hour.
 	c, err := fscache.New("./cache", 1)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -30,7 +30,7 @@ func main() {
 	// wipe the cache when done
 	defer c.Clean()
 
-  // Get() and it's streams can be called concurrently but just for example:
+	// Get() and it's streams can be called concurrently but just for example:
 	for i := 0; i < 3; i++ {
 		r, w, err := c.Get("stream")
 		if err != nil {
