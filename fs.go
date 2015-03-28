@@ -65,7 +65,11 @@ func (fs *stdFs) Reload(add func(key, name string)) error {
 	}
 
 	for _, f := range addfiles {
-		add(getKey(f.Name()), f.Name())
+		path, err := filepath.Abs(filepath.Join(fs.root, f.Name()))
+		if err != nil {
+			return err
+		}
+		add(getKey(f.Name()), path)
 	}
 
 	return nil

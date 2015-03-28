@@ -80,7 +80,7 @@ func (c *Cache) load() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.fs.Reload(func(key, name string) {
-		c.files[key] = oldFile(name)
+		c.files[key] = c.oldFile(name)
 	})
 }
 
@@ -166,10 +166,11 @@ func (c *Cache) newFile(name string) (*cachedFile, error) {
 	return cf, nil
 }
 
-func oldFile(name string) *cachedFile {
+func (c *Cache) oldFile(name string) *cachedFile {
 	b := newBroadcaster()
 	b.Close()
 	return &cachedFile{
+		fs:   c.fs,
 		name: name,
 		b:    b,
 	}
@@ -177,16 +178,17 @@ func oldFile(name string) *cachedFile {
 
 func (f *cachedFile) next() (r io.ReadCloser, err error) {
 	r, err = f.fs.Open(f.name)
-	if err == nil {
-		f.grp.Add(1)
-		atomic.AddInt64(&f.cnt, 1)
+	if err != nil {
+		return nil, err
 	}
+	f.grp.Add(1)
+	atomic.AddInt64(&f.cnt, 1)
 	return &cacheReader{
 		grp: &f.grp,
 		cnt: &f.cnt,
 		r:   r,
 		b:   f.b,
-	}, err
+	}, nil
 }
 
 func (f *cachedFile) Write(p []byte) (int, error) {
