@@ -99,7 +99,14 @@ func TestReload(t *testing.T) {
 }
 
 func TestReaper(t *testing.T) {
-	c, err := New("./cache1", 0700, 0)
+	fs, err := NewFs("./cache1", 0700)
+	if err != nil {
+		t.Error(err.Error())
+		t.FailNow()
+	}
+
+	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond))
+
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -116,7 +123,7 @@ func TestReaper(t *testing.T) {
 		t.Errorf("stream should exist")
 	}
 
-	c.reap()
+	<-time.After(200 * time.Millisecond)
 	if c.Exists("stream") {
 		t.Errorf("stream should have been reaped")
 	}
@@ -150,7 +157,7 @@ func TestReaperNoExpire(t *testing.T) {
 		t.Errorf("stream should exist")
 	}
 
-	c.reap()
+	c.haunt()
 	if !c.Exists("stream") {
 		t.Errorf("stream shouldn't have been reaped")
 	}

@@ -8,53 +8,56 @@ import (
 	"time"
 )
 
-const (
-	expiryPeriod = time.Hour
-	reaperPeriod = time.Hour
-)
-
 type Cache struct {
-	mu     sync.RWMutex
-	expiry time.Duration
-	files  map[string]*cachedFile
-	fs     FileSystem
+	mu    sync.RWMutex
+	files map[string]*cachedFile
+	grim  Reaper
+	fs    FileSystem
 }
 
-// New creates a new Cache using NewFs(dir, perms)
+// New creates a new Cache using NewFs(dir, perms).
+// expiry is the # of hours after which an un-accessed key will be
+// removed from the cache, an expiry of 0 means never expire.
 func New(dir string, perms os.FileMode, expiry int) (*Cache, error) {
 	fs, err := NewFs(dir, perms)
 	if err != nil {
 		return nil, err
 	}
-	return NewCache(fs, expiry)
+	var grim Reaper
+	if expiry > 0 {
+		grim = &reaper{
+			expiry: time.Duration(expiry) * time.Hour,
+			period: time.Duration(expiry) * time.Hour,
+		}
+	}
+	return NewCache(fs, grim)
 }
 
 // NewCache creates a new Cache based on FileSystem fs.
 // fs.Files() are loaded using the name they were created with as a key.
-// expiry is the # of hours after which an un-accessed key will be
-// removed from the cache, an expiry of 0 means never expire.
-func NewCache(fs FileSystem, expiry int) (*Cache, error) {
+// Reaper is used to determine when files expire, nil means never expire.
+func NewCache(fs FileSystem, grim Reaper) (*Cache, error) {
 	c := &Cache{
-		expiry: time.Duration(expiry) * expiryPeriod,
-		files:  make(map[string]*cachedFile),
-		fs:     fs,
+		files: make(map[string]*cachedFile),
+		grim:  grim,
+		fs:    fs,
 	}
 	err := c.load()
 	if err != nil {
 		return nil, err
 	}
-	if expiry > 0 {
-		c.reaper()
+	if grim != nil {
+		c.haunter()
 	}
 	return c, nil
 }
 
-func (c *Cache) reaper() {
-	c.reap()
-	time.AfterFunc(reaperPeriod, c.reaper)
+func (c *Cache) haunter() {
+	c.haunt()
+	time.AfterFunc(c.grim.Next(), c.haunter)
 }
 
-func (c *Cache) reap() error {
+func (c *Cache) haunt() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -68,7 +71,7 @@ func (c *Cache) reap() error {
 			continue
 		}
 
-		if !time.Now().Add(-c.expiry).Before(lastRead) {
+		if c.grim.Reap(key, lastRead) {
 			delete(c.files, key)
 			return c.fs.Remove(f.name)
 		}
