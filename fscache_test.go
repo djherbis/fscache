@@ -209,7 +209,7 @@ func TestSanity(t *testing.T) {
 	}
 	defer c.Clean()
 
-	r, w, err := c.Get("stream")
+	r, w, err := c.Get(longString)
 	if err != nil {
 		t.Error(err.Error())
 		return
