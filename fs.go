@@ -37,10 +37,11 @@ type FileSystem interface {
 	// RemoveAll should empty the FileSystem of all files.
 	RemoveAll() error
 
-	// LastAccess takes a File.Name() and returns the last time the file was read.
+	// AccessTimes takes a File.Name() and returns the last time the file was read,
+	// and the last time it was written to.
 	// It will be used to check expiry of a file, and must be concurrent safe
 	// with modifications to the FileSystem (writes, reads etc.)
-	LastAccess(name string) (time.Time, error)
+	AccessTimes(name string) (rt, wt time.Time, err error)
 }
 
 // File wraps the underlying WriteCloser source.
@@ -135,12 +136,12 @@ func (fs *stdFs) RemoveAll() error {
 	return os.RemoveAll(fs.root)
 }
 
-func (fs *stdFs) LastAccess(name string) (t time.Time, err error) {
+func (fs *stdFs) AccessTimes(name string) (rt, wt time.Time, err error) {
 	fi, err := os.Stat(name)
 	if err != nil {
-		return t, err
+		return rt, wt, err
 	}
-	return atime(fi), nil
+	return atime(fi), fi.ModTime(), nil
 }
 
 const (

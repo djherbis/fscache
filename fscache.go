@@ -66,12 +66,12 @@ func (c *Cache) haunt() {
 			continue
 		}
 
-		lastRead, err := c.fs.LastAccess(f.name)
+		lastRead, lastWrite, err := c.fs.AccessTimes(f.name)
 		if err != nil {
 			continue
 		}
 
-		if c.grim.Reap(key, lastRead) {
+		if c.grim.Reap(key, lastRead, lastWrite) {
 			delete(c.files, key)
 			c.fs.Remove(f.name)
 		}

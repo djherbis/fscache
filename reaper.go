@@ -9,9 +9,9 @@ type Reaper interface {
 	// Returns the amount of time to wait before the next scheduled Reaping.
 	Next() time.Duration
 
-	// Given a key and the last access time of a file, return true
+	// Given a key and the last r/w times of a file, return true
 	// to remove the file from the cache, false to keep it.
-	Reap(key string, lastRead time.Time) bool
+	Reap(key string, lastRead, lastWrite time.Time) bool
 }
 
 // NewReaper returns a simple reaper which runs every "period"
@@ -32,6 +32,6 @@ func (g *reaper) Next() time.Duration {
 	return g.period
 }
 
-func (g *reaper) Reap(key string, lastRead time.Time) bool {
+func (g *reaper) Reap(key string, lastRead, lastWrite time.Time) bool {
 	return lastRead.Before(time.Now().Add(-g.expiry))
 }
