@@ -73,7 +73,7 @@ func (c *Cache) haunt() error {
 
 		if c.grim.Reap(key, lastRead) {
 			delete(c.files, key)
-			return c.fs.Remove(f.name)
+			c.fs.Remove(f.name)
 		}
 	}
 	return nil
