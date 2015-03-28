@@ -16,11 +16,30 @@ const prefixSize = 8
 
 // FileSystem is used as the source for a Cache.
 type FileSystem interface {
+	// Reload should look through the FileSystem and call the suplied fn
+	// with the key/filename pairs that are found.
 	Reload(func(key, name string)) error
+
+	// Create should return a new File using a name generated from the passed key.
 	Create(string) (File, error)
+
+	// Open takes a File.Name() and returns a concurrent-safe reader to the file.
+	// The reader may return io.EOF when reaches the end of written content, but
+	// if more content is written and Read is called again, it must continue
+	// reading the data.
 	Open(string) (io.ReadCloser, error)
+
+	// Remove takes a File.Name() and deletes the underlying file.
+	// It does not have to worry about concurrent use, the Cache will wait
+	// for all activity in the file to cease.
 	Remove(string) error
+
+	// RemoveAll should empty the FileSystem of all files.
 	RemoveAll() error
+
+	// LastAccess takes a File.Name() and returns the last time the file was read.
+	// It will be used to check expiry of a file, and must be concurrent safe
+	// with modifications to the FileSystem (writes, reads etc.)
 	LastAccess(string) (time.Time, error)
 }
 
