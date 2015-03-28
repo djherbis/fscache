@@ -5,11 +5,13 @@ import "time"
 // Reaper is used to control when streams expire from the cache.
 // It is called once right after loading, and then it is run
 // again after every Next() period of time.
-// Reap() takes the key and the last access time of a stream in the cache.
-// Return true to remove the key, false to keep it.
 type Reaper interface {
+	// Returns the amount of time to wait before the next scheduled Reaping.
 	Next() time.Duration
-	Reap(string, time.Time) bool
+
+	// Given a key and the last access time of a file, return true
+	// to remove the file from the cache, false to keep it.
+	Reap(key string, lastRead time.Time) bool
 }
 
 // NewReaper returns a simple reaper which runs every "period"
