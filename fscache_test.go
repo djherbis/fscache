@@ -117,13 +117,20 @@ func TestReaper(t *testing.T) {
 	w.Write([]byte("hello"))
 	w.Close()
 	io.Copy(ioutil.Discard, r)
-	r.Close()
 
 	if !c.Exists("stream") {
 		t.Errorf("stream should exist")
 	}
 
 	<-time.After(200 * time.Millisecond)
+
+	if !c.Exists("stream") {
+		t.Errorf("a file expired while in use, fail!")
+	}
+	r.Close()
+
+	<-time.After(200 * time.Millisecond)
+
 	if c.Exists("stream") {
 		t.Errorf("stream should have been reaped")
 	}
