@@ -34,8 +34,8 @@ type stdFs struct {
 	root string
 }
 
-// NewFs returns a FileSystem rooted at directory dir
-// dir is created with perms if it doesn't exist.
+// NewFs returns a FileSystem rooted at directory dir.
+// Dir is created with perms if it doesn't exist.
 func NewFs(dir string, mode os.FileMode) (FileSystem, error) {
 	return &stdFs{root: dir}, os.MkdirAll(dir, mode)
 }
