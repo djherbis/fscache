@@ -1,8 +1,11 @@
 package fscache
 
 import (
+	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 )
 
@@ -38,4 +41,28 @@ func Example() {
 	// hello world
 	// hello world
 	// hello world
+}
+
+func ExampleHandler() {
+	c, err := New("./server", 0700, 0)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	defer c.Clean()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello Client")
+	})
+
+	ts := httptest.NewServer(Handler(c, handler))
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	io.Copy(os.Stdout, resp.Body)
+	resp.Body.Close()
+	// Output:
+	// Hello Client
 }

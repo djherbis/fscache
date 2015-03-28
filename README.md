@@ -10,6 +10,34 @@ Usage
 ------------
 Streaming File Cache for #golang
 
+A Caching Middle-ware:
+
+```go
+package main
+
+import(
+	"net/http"
+	"time"
+
+	"github.com/djherbis/fscache"
+)
+
+func main(){
+	c, err := fscache.New("./cache", 0700, 0)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%v: %s", time.Now(), "hello world")
+	}
+
+	http.ListenAndServe(":8080", fscache.Handler(c, http.HandlerFunc(handler)))
+}
+```
+
+Using the Cache directly:
+
 ```go
 package main
 
