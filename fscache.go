@@ -57,7 +57,7 @@ func (c *Cache) haunter() {
 	time.AfterFunc(c.grim.Next(), c.haunter)
 }
 
-func (c *Cache) haunt() error {
+func (c *Cache) haunt() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -76,7 +76,7 @@ func (c *Cache) haunt() error {
 			c.fs.Remove(f.name)
 		}
 	}
-	return nil
+	return
 }
 
 func (c *Cache) load() error {
