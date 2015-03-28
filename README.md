@@ -10,6 +10,8 @@ Usage
 ------------
 Streaming File Cache for #golang
 
+fscache allows multiple readers to read from a cache while its being written to.
+
 A Caching Middle-ware:
 
 ```go
