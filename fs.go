@@ -2,6 +2,7 @@ package fscache
 
 import (
 	"bytes"
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -9,10 +10,9 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
-
-const prefixSize = 8
 
 // FileSystem is used as the source for a Cache.
 type FileSystem interface {
@@ -65,18 +65,34 @@ func (fs *stdFs) Reload(add func(key, name string)) error {
 		return err
 	}
 
-	addfiles := make(map[string]os.FileInfo)
+	addfiles := make(map[string]struct {
+		os.FileInfo
+		key string
+	})
 
 	for _, f := range files {
 
-		key := getKey(f.Name())
+		if strings.HasSuffix(f.Name(), ".key") {
+			continue
+		}
+
+		key, err := fs.getKey(f.Name())
+		if err != nil {
+			return err
+		}
 		fi, ok := addfiles[key]
 
 		if !ok || fi.ModTime().Before(f.ModTime()) {
 			if ok {
 				fs.Remove(fi.Name())
 			}
-			addfiles[key] = f
+			addfiles[key] = struct {
+				os.FileInfo
+				key string
+			}{
+				FileInfo: f,
+				key:      key,
+			}
 		} else {
 			fs.Remove(f.Name())
 		}
@@ -88,14 +104,22 @@ func (fs *stdFs) Reload(add func(key, name string)) error {
 		if err != nil {
 			return err
 		}
-		add(getKey(f.Name()), path)
+		add(f.key, path)
 	}
 
 	return nil
 }
 
 func (fs *stdFs) Create(name string) (File, error) {
-	return os.OpenFile(filepath.Join(fs.root, makeName(name)), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	name, err := fs.makeName(name)
+	if err != nil {
+		return nil, err
+	}
+	return fs.create(name)
+}
+
+func (fs *stdFs) create(name string) (File, error) {
+	return os.OpenFile(filepath.Join(fs.root, name), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
 func (fs *stdFs) Open(name string) (io.ReadCloser, error) {
@@ -103,6 +127,7 @@ func (fs *stdFs) Open(name string) (io.ReadCloser, error) {
 }
 
 func (fs *stdFs) Remove(name string) error {
+	os.Remove(fmt.Sprintf("%s.key", name))
 	return os.Remove(name)
 }
 
@@ -118,16 +143,70 @@ func (fs *stdFs) LastAccess(name string) (t time.Time, err error) {
 	return atime(fi), nil
 }
 
-func makeName(key string) string {
-	buf := bytes.NewBuffer(nil)
+const (
+	saltSize    = 8
+	maxShort    = 20
+	shortPrefix = "s"
+	longPrefix  = "l"
+)
+
+func salt() string {
+	buf := bytes.NewBufferString("")
 	enc := base64.NewEncoder(base64.URLEncoding, buf)
-	io.CopyN(enc, rand.Reader, prefixSize)
-	return fmt.Sprintf("%s%s", buf.Bytes(), key)
+	io.CopyN(enc, rand.Reader, saltSize)
+	return buf.String()
 }
 
-func getKey(name string) (key string) {
-	if len(name) >= prefixSize {
-		key = name[prefixSize:]
+func tob64(s string) string {
+	buf := bytes.NewBufferString("")
+	enc := base64.NewEncoder(base64.URLEncoding, buf)
+	enc.Write([]byte(s))
+	enc.Close()
+	return buf.String()
+}
+
+func fromb64(s string) string {
+	buf := bytes.NewBufferString(s)
+	dec := base64.NewDecoder(base64.URLEncoding, buf)
+	out := bytes.NewBufferString("")
+	io.Copy(out, dec)
+	return out.String()
+}
+
+func (fs *stdFs) makeName(key string) (string, error) {
+	b64key := tob64(key)
+	// short name
+	if len(b64key) < maxShort {
+		return fmt.Sprintf("%s%s%s", shortPrefix, salt(), b64key), nil
 	}
-	return key
+
+	// long name
+	hash := md5.Sum([]byte(key))
+	name := fmt.Sprintf("%s%s%x", longPrefix, salt(), hash[:])
+	f, err := fs.create(fmt.Sprintf("%s.key", name))
+	if err != nil {
+		return "", err
+	}
+	_, err = f.Write([]byte(key))
+	f.Close()
+	return name, err
+}
+
+func (fs *stdFs) getKey(name string) (string, error) {
+	// short name
+	if strings.HasPrefix(name, shortPrefix) {
+		return fromb64(strings.TrimPrefix(name, shortPrefix)[saltSize:]), nil
+	}
+
+	// long name
+	f, err := fs.Open(filepath.Join(fs.root, fmt.Sprintf("%s.key", name)))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	key, err := ioutil.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+	return string(key), nil
 }

@@ -2,6 +2,8 @@ package fscache
 
 import (
 	"bytes"
+	"crypto/md5"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -16,13 +18,13 @@ func createFile(name string) (*os.File, error) {
 
 func TestLoadCleanup1(t *testing.T) {
 	os.Mkdir("./cache6", 0700)
-	f, err := createFile(filepath.Join("./cache6", "11111111test"))
+	f, err := createFile(filepath.Join("./cache6", "s11111111"+tob64("test")))
 	if err != nil {
 		t.Error(err.Error())
 	}
 	f.Close()
 	<-time.After(time.Second)
-	f, err = createFile(filepath.Join("./cache6", "22222222test"))
+	f, err = createFile(filepath.Join("./cache6", "s22222222"+tob64("test")))
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -40,18 +42,47 @@ func TestLoadCleanup1(t *testing.T) {
 	}
 }
 
+const longString = `
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+	0123456789 0123456789
+`
+
 func TestLoadCleanup2(t *testing.T) {
+	hash := md5.Sum([]byte(longString))
+	name2 := fmt.Sprintf("%s%s%x", longPrefix, "22222222", hash[:])
+	name1 := fmt.Sprintf("%s%s%x", longPrefix, "11111111", hash[:])
+
 	os.Mkdir("./cache7", 0700)
-	f, err := createFile(filepath.Join("./cache7", "22222222test"))
+	f, err := createFile(filepath.Join("./cache7", name2))
 	if err != nil {
 		t.Error(err.Error())
 	}
 	f.Close()
-	<-time.After(time.Second)
-	f, err = createFile(filepath.Join("./cache7", "11111111test"))
+	f, err = createFile(filepath.Join("./cache7", fmt.Sprintf("%s.key", name2)))
 	if err != nil {
 		t.Error(err.Error())
 	}
+	f.Write([]byte(longString))
+	f.Close()
+	<-time.After(time.Second)
+	f, err = createFile(filepath.Join("./cache7", name1))
+	if err != nil {
+		t.Error(err.Error())
+	}
+	f.Close()
+	f, err = createFile(filepath.Join("./cache7", fmt.Sprintf("%s.key", name1)))
+	if err != nil {
+		t.Error(err.Error())
+	}
+	f.Write([]byte(longString))
 	f.Close()
 
 	c, err := New("./cache7", 0700, 0)
@@ -61,7 +92,7 @@ func TestLoadCleanup2(t *testing.T) {
 	}
 	defer c.Clean()
 
-	if !c.Exists("test") {
+	if !c.Exists(longString) {
 		t.Errorf("expected test to exist")
 	}
 }
