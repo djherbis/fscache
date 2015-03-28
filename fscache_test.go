@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +16,34 @@ import (
 
 func createFile(name string) (*os.File, error) {
 	return os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+}
+
+func TestHandler(t *testing.T) {
+	c, err := New("./cache8", 0700, 0)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer c.Clean()
+
+	ts := httptest.NewServer(Handler(c, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello Client")
+	})))
+	defer ts.Close()
+
+	for i := 0; i < 3; i++ {
+		res, err := http.Get(ts.URL)
+		if err != nil {
+			t.Error(err.Error())
+			t.FailNow()
+		}
+		p, err := ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		if !bytes.Equal([]byte("Hello Client\n"), p) {
+			t.Errorf("unexpected response %s", string(p))
+		}
+	}
+
 }
 
 func TestLoadCleanup1(t *testing.T) {
