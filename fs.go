@@ -16,7 +16,7 @@ const prefixSize = 8
 
 // FileSystem is used as the source for a Cache.
 type FileSystem interface {
-	Files() ([]os.FileInfo, error)
+	Reload(func(key, name string)) error
 	Create(string) (File, error)
 	Open(string) (io.ReadCloser, error)
 	Remove(string) error
@@ -40,8 +40,35 @@ func NewFs(dir string, mode os.FileMode) (FileSystem, error) {
 	return &stdFs{root: dir}, os.MkdirAll(dir, mode)
 }
 
-func (fs *stdFs) Files() ([]os.FileInfo, error) {
-	return ioutil.ReadDir(fs.root)
+func (fs *stdFs) Reload(add func(key, name string)) error {
+	files, err := ioutil.ReadDir(fs.root)
+	if err != nil {
+		return err
+	}
+
+	addfiles := make(map[string]os.FileInfo)
+
+	for _, f := range files {
+
+		key := getKey(f.Name())
+		fi, ok := addfiles[key]
+
+		if !ok || fi.ModTime().Before(f.ModTime()) {
+			if ok {
+				fs.Remove(fi.Name())
+			}
+			addfiles[key] = f
+		} else {
+			fs.Remove(f.Name())
+		}
+
+	}
+
+	for _, f := range addfiles {
+		add(getKey(f.Name()), f.Name())
+	}
+
+	return nil
 }
 
 func (fs *stdFs) Create(name string) (File, error) {

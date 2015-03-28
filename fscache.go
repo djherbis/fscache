@@ -79,31 +79,9 @@ func (c *Cache) reap() error {
 func (c *Cache) load() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	files, err := c.fs.Files()
-	if err != nil {
-		return err
-	}
-
-	modtimes := make(map[string]time.Time)
-
-	for _, f := range files {
-		key := getKey(f.Name())
-		t, ok := modtimes[key]
-		if !ok || t.Before(f.ModTime()) {
-			if ok {
-				f, ok := c.files[key]
-				if ok {
-					c.fs.Remove(f.name)
-				}
-			}
-			c.files[key] = oldFile(f.Name())
-			modtimes[key] = f.ModTime()
-		} else {
-			c.fs.Remove(f.Name())
-		}
-	}
-	return nil
+	return c.fs.Reload(func(key, name string) {
+		c.files[key] = oldFile(name)
+	})
 }
 
 // Exists checks if a key is in the cache.
