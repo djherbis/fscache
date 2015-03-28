@@ -106,17 +106,26 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 	defer c.mu.Unlock()
 
 	f, ok := c.files[key]
-	if !ok {
-		f, err = c.newFile(key)
-		if err != nil {
-			return nil, nil, err
-		}
-		w = f
-		c.files[key] = f
+	if ok {
+		r, err = f.next()
+		return r, nil, err
 	}
-	r, err = f.next()
 
-	return r, w, err
+	f, err = c.newFile(key)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	r, err = f.next()
+	if err != nil {
+		f.Close()
+		c.fs.Remove(f.name)
+		return nil, nil, err
+	}
+
+	c.files[key] = f
+
+	return r, f, err
 }
 
 // Remove deletes the stream from the cache, blocking until the underlying
