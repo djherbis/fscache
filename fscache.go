@@ -1,49 +1,45 @@
 package fscache
 
 import (
-	"bytes"
-	"crypto/rand"
-	"encoding/base64"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 const (
-	prefixSize   = 8
 	expiryPeriod = time.Hour
 	reaperPeriod = time.Hour
 )
 
 type Cache struct {
 	mu     sync.RWMutex
-	dir    string
 	expiry time.Duration
 	files  map[string]*cachedFile
+	fs     FileSystem
 }
 
-// New creates a new Cache based on directory dir.
-// Dir is created if it does not exist, and the files
-// in it are loaded into the cache using their filename as their key.
-// expiry is the # of hours after which an un-accessed key will be
-// removed from the cache.
-// an expiry of 0 means never expire.
-func New(dir string, mode os.FileMode, expiry int) (*Cache, error) {
-	err := os.MkdirAll(dir, mode)
+// New creates a new Cache using NewFs(dir, perms)
+func New(dir string, perms os.FileMode, expiry int) (*Cache, error) {
+	fs, err := NewFs(dir, perms)
 	if err != nil {
 		return nil, err
 	}
+	return NewCache(fs, expiry)
+}
+
+// NewCache creates a new Cache based on FileSystem fs.
+// fs.Files() are loaded using the name they were created with as a key.
+// expiry is the # of hours after which an un-accessed key will be
+// removed from the cache, an expiry of 0 means never expire.
+func NewCache(fs FileSystem, expiry int) (*Cache, error) {
 	c := &Cache{
-		dir:    dir,
 		expiry: time.Duration(expiry) * expiryPeriod,
 		files:  make(map[string]*cachedFile),
+		fs:     fs,
 	}
-	err = c.load()
+	err := c.load()
 	if err != nil {
 		return nil, err
 	}
@@ -67,14 +63,14 @@ func (c *Cache) reap() error {
 			continue
 		}
 
-		fi, err := os.Stat(f.name)
+		lastRead, err := c.fs.LastAccess(f.name)
 		if err != nil {
 			continue
 		}
 
-		if !time.Now().Add(-c.expiry).Before(atime(fi)) {
+		if !time.Now().Add(-c.expiry).Before(lastRead) {
 			delete(c.files, key)
-			return os.Remove(f.name)
+			return c.fs.Remove(f.name)
 		}
 	}
 	return nil
@@ -84,7 +80,7 @@ func (c *Cache) load() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	files, err := ioutil.ReadDir(c.dir)
+	files, err := c.fs.Files()
 	if err != nil {
 		return err
 	}
@@ -98,30 +94,16 @@ func (c *Cache) load() error {
 			if ok {
 				f, ok := c.files[key]
 				if ok {
-					os.Remove(f.name)
+					c.fs.Remove(f.name)
 				}
 			}
-			c.files[key] = oldFile(filepath.Join(c.dir, f.Name()))
+			c.files[key] = oldFile(f.Name())
 			modtimes[key] = f.ModTime()
 		} else {
-			os.Remove(f.Name())
+			c.fs.Remove(f.Name())
 		}
 	}
 	return nil
-}
-
-func makeName(key string) string {
-	buf := bytes.NewBuffer(nil)
-	enc := base64.NewEncoder(base64.URLEncoding, buf)
-	io.CopyN(enc, rand.Reader, prefixSize)
-	return fmt.Sprintf("%s%s", buf.Bytes(), key)
-}
-
-func getKey(name string) (key string) {
-	if len(name) >= prefixSize {
-		key = name[prefixSize:]
-	}
-	return key
 }
 
 // Exists checks if a key is in the cache.
@@ -144,7 +126,7 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 
 	f, ok := c.files[key]
 	if !ok {
-		f, err = newFile(filepath.Join(c.dir, makeName(key)))
+		f, err = c.newFile(key)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -167,7 +149,7 @@ func (c *Cache) Remove(key string) error {
 
 	if ok {
 		f.grp.Wait()
-		return os.Remove(f.name)
+		return c.fs.Remove(f.name)
 	}
 	return nil
 }
@@ -178,23 +160,25 @@ func (c *Cache) Clean() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.files = make(map[string]*cachedFile)
-	return os.RemoveAll(c.dir)
+	return c.fs.RemoveAll()
 }
 
 type cachedFile struct {
+	fs   FileSystem
 	name string
 	cnt  int64
 	grp  sync.WaitGroup
-	w    *os.File
+	w    io.WriteCloser
 	b    *broadcaster
 }
 
-func newFile(name string) (*cachedFile, error) {
-	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+func (c *Cache) newFile(name string) (*cachedFile, error) {
+	f, err := c.fs.Create(name)
 	if err != nil {
 		return nil, err
 	}
 	cf := &cachedFile{
+		fs:   c.fs,
 		name: f.Name(),
 		w:    f,
 		b:    newBroadcaster(),
@@ -214,7 +198,7 @@ func oldFile(name string) *cachedFile {
 }
 
 func (f *cachedFile) next() (r io.ReadCloser, err error) {
-	r, err = os.Open(f.name)
+	r, err = f.fs.Open(f.name)
 	if err == nil {
 		f.grp.Add(1)
 		atomic.AddInt64(&f.cnt, 1)
