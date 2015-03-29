@@ -13,6 +13,8 @@ type memFS struct {
 	files map[string]*memFile
 }
 
+// NewMemFs creates an in-memory FileSystem.
+// It does not support persistence (Reload is a nop).
 func NewMemFs() FileSystem {
 	return &memFS{
 		files: make(map[string]*memFile),
