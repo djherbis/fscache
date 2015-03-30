@@ -8,7 +8,31 @@ import (
 	"time"
 )
 
-type Cache struct {
+// Cache works like a concurrent-safe map for streams.
+type Cache interface {
+
+	// Get manages access to the streams in the cache.
+	// If the key does not exist, w != nil and you can start writing to the stream.
+	// If the key does exist, w == nil.
+	// r will always be non-nil as long as err == nil and you must close r when you're done reading.
+	// Get can be called concurrently, and writing and reading is concurrent safe.
+	Get(key string) (io.ReadCloser, io.WriteCloser, error)
+
+	// Remove deletes the stream from the cache, blocking until the underlying
+	// file can be deleted (all active streams finish with it).
+	// It is safe to call Remove concurrently with Get.
+	Remove(key string) error
+
+	// Exists checks if a key is in the cache.
+	// It is safe to call Exists concurrently with Get.
+	Exists(key string) bool
+
+	// Clean will empty the cache and delete the cache folder.
+	// Clean is not safe to call while streams are being read/written.
+	Clean() error
+}
+
+type cache struct {
 	mu    sync.RWMutex
 	files map[string]*cachedFile
 	grim  Reaper
@@ -18,7 +42,7 @@ type Cache struct {
 // New creates a new Cache using NewFs(dir, perms).
 // expiry is the # of hours after which an un-accessed key will be
 // removed from the cache, an expiry of 0 means never expire.
-func New(dir string, perms os.FileMode, expiry int) (*Cache, error) {
+func New(dir string, perms os.FileMode, expiry int) (Cache, error) {
 	fs, err := NewFs(dir, perms)
 	if err != nil {
 		return nil, err
@@ -36,8 +60,8 @@ func New(dir string, perms os.FileMode, expiry int) (*Cache, error) {
 // NewCache creates a new Cache based on FileSystem fs.
 // fs.Files() are loaded using the name they were created with as a key.
 // Reaper is used to determine when files expire, nil means never expire.
-func NewCache(fs FileSystem, grim Reaper) (*Cache, error) {
-	c := &Cache{
+func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
+	c := &cache{
 		files: make(map[string]*cachedFile),
 		grim:  grim,
 		fs:    fs,
@@ -52,12 +76,12 @@ func NewCache(fs FileSystem, grim Reaper) (*Cache, error) {
 	return c, nil
 }
 
-func (c *Cache) haunter() {
+func (c *cache) haunter() {
 	c.haunt()
 	time.AfterFunc(c.grim.Next(), c.haunter)
 }
 
-func (c *Cache) haunt() {
+func (c *cache) haunt() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -79,7 +103,7 @@ func (c *Cache) haunt() {
 	return
 }
 
-func (c *Cache) load() error {
+func (c *cache) load() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.fs.Reload(func(key, name string) {
@@ -87,21 +111,14 @@ func (c *Cache) load() error {
 	})
 }
 
-// Exists checks if a key is in the cache.
-// It is safe to call Exists concurrently with Get.
-func (c *Cache) Exists(key string) bool {
+func (c *cache) Exists(key string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	_, ok := c.files[key]
 	return ok
 }
 
-// Get manages access to the streams in the cache.
-// If the key does not exist, w != nil and you can start writing to the stream.
-// If the key does exist, w == nil.
-// r will always be non-nil as long as err == nil and you must close r when you're done reading.
-// Get can be called concurrently, and writing and reading is concurrent safe.
-func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
+func (c *cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -128,10 +145,7 @@ func (c *Cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 	return r, f, err
 }
 
-// Remove deletes the stream from the cache, blocking until the underlying
-// file can be deleted (all active streams finish with it).
-// It is safe to call Remove concurrently with Get.
-func (c *Cache) Remove(key string) error {
+func (c *cache) Remove(key string) error {
 	c.mu.Lock()
 	f, ok := c.files[key]
 	delete(c.files, key)
@@ -144,9 +158,7 @@ func (c *Cache) Remove(key string) error {
 	return nil
 }
 
-// Clean will empty the cache and delete the cache folder.
-// Clean is not safe to call while streams are being read/written.
-func (c *Cache) Clean() error {
+func (c *cache) Clean() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.files = make(map[string]*cachedFile)
@@ -162,7 +174,7 @@ type cachedFile struct {
 	b    *broadcaster
 }
 
-func (c *Cache) newFile(name string) (*cachedFile, error) {
+func (c *cache) newFile(name string) (*cachedFile, error) {
 	f, err := c.fs.Create(name)
 	if err != nil {
 		return nil, err
@@ -178,7 +190,7 @@ func (c *Cache) newFile(name string) (*cachedFile, error) {
 	return cf, nil
 }
 
-func (c *Cache) oldFile(name string) *cachedFile {
+func (c *cache) oldFile(name string) *cachedFile {
 	b := newBroadcaster()
 	b.Close()
 	return &cachedFile{

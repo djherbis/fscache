@@ -12,7 +12,7 @@ import (
 // Handler is a caching middle-ware for http Handlers.
 // It responds to http requests via the passed http.Handler, and caches the response
 // using the passed cache. The cache key for the request is the req.URL.String().
-func Handler(c *Cache, h http.Handler) http.Handler {
+func Handler(c Cache, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		url := req.URL.String()
 		r, w, err := c.Get(url)

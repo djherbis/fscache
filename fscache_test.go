@@ -18,7 +18,7 @@ func createFile(name string) (*os.File, error) {
 	return os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
-func testCaches(t *testing.T, run func(c *Cache)) {
+func testCaches(t *testing.T, run func(c Cache)) {
 	c, err := New("./cache", 0700, 1)
 	if err != nil {
 		t.Error(err.Error())
@@ -35,7 +35,7 @@ func testCaches(t *testing.T, run func(c *Cache)) {
 }
 
 func TestHandler(t *testing.T) {
-	testCaches(t, func(c *Cache) {
+	testCaches(t, func(c Cache) {
 		ts := httptest.NewServer(Handler(c, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "Hello Client")
 		})))
@@ -245,7 +245,7 @@ func TestReaper(t *testing.T) {
 }
 
 func TestReaperNoExpire(t *testing.T) {
-	testCaches(t, func(c *Cache) {
+	testCaches(t, func(c Cache) {
 		defer c.Clean()
 		r, w, err := c.Get("stream")
 		if err != nil {
@@ -261,7 +261,7 @@ func TestReaperNoExpire(t *testing.T) {
 			t.Errorf("stream should exist")
 		}
 
-		c.haunt()
+		c.(*cache).haunt()
 		if !c.Exists("stream") {
 			t.Errorf("stream shouldn't have been reaped")
 		}
@@ -269,7 +269,7 @@ func TestReaperNoExpire(t *testing.T) {
 }
 
 func TestSanity(t *testing.T) {
-	testCaches(t, func(c *Cache) {
+	testCaches(t, func(c Cache) {
 		defer c.Clean()
 
 		r, w, err := c.Get(longString)
@@ -295,7 +295,7 @@ func TestSanity(t *testing.T) {
 }
 
 func TestConcurrent(t *testing.T) {
-	testCaches(t, func(c *Cache) {
+	testCaches(t, func(c Cache) {
 		defer c.Clean()
 
 		r, w, err := c.Get("stream")
