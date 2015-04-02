@@ -119,10 +119,19 @@ func (c *cache) Exists(key string) bool {
 }
 
 func (c *cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
+	c.mu.RLock()
+	f, ok := c.files[key]
+	if ok {
+		r, err = f.next()
+		c.mu.RUnlock()
+		return r, nil, err
+	}
+	c.mu.RUnlock()
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	f, ok := c.files[key]
+	f, ok = c.files[key]
 	if ok {
 		r, err = f.next()
 		return r, nil, err
