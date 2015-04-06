@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"time"
 )
 
 func Example() {
 	// create the cache, keys expire after 1 hour.
-	c, err := New("./cache", 0755, 1)
+	c, err := New("./cache", 0755, time.Hour)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
