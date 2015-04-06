@@ -270,8 +270,6 @@ func (r *cacheReader) Read(p []byte) (n int, err error) {
 		}
 
 	}
-
-	return n, err
 }
 
 func (r *cacheReader) Close() error {
