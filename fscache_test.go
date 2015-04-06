@@ -19,7 +19,7 @@ func createFile(name string) (*os.File, error) {
 }
 
 func testCaches(t *testing.T, run func(c Cache)) {
-	c, err := New("./cache", 0700, 1)
+	c, err := New("./cache", 0700, 1*time.Hour)
 	if err != nil {
 		t.Error(err.Error())
 		return

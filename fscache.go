@@ -40,9 +40,9 @@ type cache struct {
 }
 
 // New creates a new Cache using NewFs(dir, perms).
-// expiry is the # of hours after which an un-accessed key will be
-// removed from the cache, an expiry of 0 means never expire.
-func New(dir string, perms os.FileMode, expiry int) (Cache, error) {
+// expiry is the duration after which an un-accessed key will be removed from
+// the cache, a zero value expiro means never expire.
+func New(dir string, perms os.FileMode, expiry time.Duration) (Cache, error) {
 	fs, err := NewFs(dir, perms)
 	if err != nil {
 		return nil, err
@@ -50,8 +50,8 @@ func New(dir string, perms os.FileMode, expiry int) (Cache, error) {
 	var grim Reaper
 	if expiry > 0 {
 		grim = &reaper{
-			expiry: time.Duration(expiry) * time.Hour,
-			period: time.Duration(expiry) * time.Hour,
+			expiry: expiry,
+			period: expiry,
 		}
 	}
 	return NewCache(fs, grim)
