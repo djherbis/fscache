@@ -70,7 +70,7 @@ func (fs *memFS) Remove(name string) error {
 func (fs *memFS) RemoveAll() error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	fs.files = nil
+	fs.files = make(map[string]*memFile)
 	return nil
 }
 
