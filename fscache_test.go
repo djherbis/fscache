@@ -18,6 +18,11 @@ func createFile(name string) (*os.File, error) {
 	return os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
+func init() {
+	c, _ := NewCache(NewMemFs(), nil)
+	go ListenAndServe(c, ":10000")
+}
+
 func testCaches(t *testing.T, run func(c Cache)) {
 	c, err := New("./cache", 0700, 1*time.Hour)
 	if err != nil {
@@ -31,6 +36,9 @@ func testCaches(t *testing.T, run func(c Cache)) {
 		t.Error(err.Error())
 		return
 	}
+	run(c)
+
+	c = NewRemote("localhost:10000")
 	run(c)
 }
 
@@ -261,9 +269,11 @@ func TestReaperNoExpire(t *testing.T) {
 			t.Errorf("stream should exist")
 		}
 
-		c.(*cache).haunt()
-		if !c.Exists("stream") {
-			t.Errorf("stream shouldn't have been reaped")
+		if lc, ok := c.(*cache); ok {
+			lc.haunt()
+			if !c.Exists("stream") {
+				t.Errorf("stream shouldn't have been reaped")
+			}
 		}
 	})
 }
