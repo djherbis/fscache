@@ -59,8 +59,6 @@ func sendKey(w io.Writer, key string) {
 }
 
 func (s *server) Serve(c net.Conn) {
-	defer c.Close() // BUG(djherbis) wrong side hang-up
-
 	var action int
 	fmt.Fscanf(c, "%d\n", &action)
 
@@ -110,8 +108,8 @@ type remote struct {
 	raddr string
 }
 
-func (r *remote) Get(key string) (io.ReadCloser, io.WriteCloser, error) {
-	c, err := net.Dial("tcp", r.raddr)
+func (rmt *remote) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
+	c, err := net.Dial("tcp", rmt.raddr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -121,13 +119,55 @@ func (r *remote) Get(key string) (io.ReadCloser, io.WriteCloser, error) {
 	var i int
 	fmt.Fscanf(c, "%d\n", &i)
 
+	var ch chan struct{}
+
 	switch i {
 	case 0:
-		return newDecoder(c), nil, nil
+		ch = make(chan struct{}) // close net.Conn on reader close
 	case 1:
-		return newDecoder(c), newEncoder(c), nil
+		ch = make(chan struct{}, 1) // two closes before net.Conn close
+
+		w = &safeCloser{
+			c:  c,
+			ch: ch,
+			w:  newEncoder(c),
+		}
 	default:
 		return nil, nil, errors.New("bad bad bad")
+	}
+
+	r = &safeCloser{
+		c:  c,
+		ch: ch,
+		r:  newDecoder(c),
+	}
+
+	return r, w, nil
+}
+
+type safeCloser struct {
+	c  net.Conn
+	ch chan<- struct{}
+	r  io.ReadCloser
+	w  io.WriteCloser
+}
+
+func (s *safeCloser) Read(p []byte) (int, error)  { return s.r.Read(p) }
+func (s *safeCloser) Write(p []byte) (int, error) { return s.w.Write(p) }
+
+// Close only closes the underlying connection when ch is full.
+func (s *safeCloser) Close() (err error) {
+	if s.r != nil {
+		err = s.r.Close()
+	} else if s.w != nil {
+		err = s.w.Close()
+	}
+
+	select {
+	case s.ch <- struct{}{}:
+		return err
+	default:
+		return s.c.Close()
 	}
 }
 
