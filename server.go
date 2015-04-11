@@ -171,8 +171,8 @@ func (s *safeCloser) Close() (err error) {
 	}
 }
 
-func (r *remote) Exists(key string) bool {
-	c, err := net.Dial("tcp", r.raddr)
+func (rmt *remote) Exists(key string) bool {
+	c, err := net.Dial("tcp", rmt.raddr)
 	if err != nil {
 		return false
 	}
@@ -183,8 +183,8 @@ func (r *remote) Exists(key string) bool {
 	return i == 1
 }
 
-func (r *remote) Remove(key string) error {
-	c, err := net.Dial("tcp", r.raddr)
+func (rmt *remote) Remove(key string) error {
+	c, err := net.Dial("tcp", rmt.raddr)
 	if err != nil {
 		return err
 	}
@@ -193,8 +193,8 @@ func (r *remote) Remove(key string) error {
 	return nil
 }
 
-func (r *remote) Clean() error {
-	c, err := net.Dial("tcp", r.raddr)
+func (rmt *remote) Clean() error {
+	c, err := net.Dial("tcp", rmt.raddr)
 	if err != nil {
 		return err
 	}
