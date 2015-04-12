@@ -38,6 +38,13 @@ func testCaches(t *testing.T, run func(c Cache)) {
 	}
 	run(c)
 
+	c2, _ := NewCache(NewMemFs(), nil)
+	dc := NewDistributed(c, c2)
+	run(dc)
+
+	lc := NewLayered(c, c2)
+	run(lc)
+
 	c = NewRemote("localhost:10000")
 	run(c)
 }
