@@ -39,8 +39,7 @@ func testCaches(t *testing.T, run func(c Cache)) {
 	run(c)
 
 	c2, _ := NewCache(NewMemFs(), nil)
-	dc := NewDistributed(c, c2)
-	run(dc)
+	run(NewPartition(NewDistributor(c, c2)))
 
 	lc := NewLayered(c, c2)
 	run(lc)

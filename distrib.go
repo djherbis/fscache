@@ -7,11 +7,18 @@ import (
 	"io"
 )
 
-// Distributor is a function which given a key returns an i from 0 to n-1.
-type Distributor func(key string, n uint64) (i uint64)
+// Distributor provides a way to partition keys into Caches.
+type Distributor interface {
 
-// StdDistributor distributes the keyspace evenly.
-func StdDistributor(key string, n uint64) uint64 {
+	// GetCache will always return the same Cache for the same key.
+	GetCache(key string) Cache
+
+	// Clean should wipe all the caches this Distributor manages
+	Clean() error
+}
+
+// stdDistribution distributes the keyspace evenly.
+func stdDistribution(key string, n uint64) uint64 {
 	h := sha1.New()
 	io.WriteString(h, key)
 	buf := bytes.NewBuffer(h.Sum(nil)[:8])
@@ -19,43 +26,27 @@ func StdDistributor(key string, n uint64) uint64 {
 	return i % n
 }
 
-type distrib struct {
-	distributor Distributor
-	caches      []Cache
-	size        uint64
-}
-
-// NewDistributed returns a cache which shards across the passed caches evenly.
-func NewDistributed(caches ...Cache) Cache {
-	return NewCustomDistributed(StdDistributor, caches...)
-}
-
-// NewCustomDistributed returns a cache which shards according to Distributor d.
-func NewCustomDistributed(d Distributor, caches ...Cache) Cache {
+// NewDistributor returns a Distributor which evenly distributes the keyspace
+// into the passed caches.
+func NewDistributor(caches ...Cache) Distributor {
 	if len(caches) == 0 {
 		return nil
 	}
 	return &distrib{
-		distributor: d,
-		caches:      caches,
-		size:        uint64(len(caches)),
+		distribution: stdDistribution,
+		caches:       caches,
+		size:         uint64(len(caches)),
 	}
 }
 
-func (d *distrib) getCache(key string) Cache {
-	return d.caches[d.distributor(key, d.size)]
+type distrib struct {
+	distribution func(key string, n uint64) uint64
+	caches       []Cache
+	size         uint64
 }
 
-func (d *distrib) Get(key string) (io.ReadCloser, io.WriteCloser, error) {
-	return d.getCache(key).Get(key)
-}
-
-func (d *distrib) Remove(key string) error {
-	return d.getCache(key).Remove(key)
-}
-
-func (d *distrib) Exists(key string) bool {
-	return d.getCache(key).Exists(key)
+func (d *distrib) GetCache(key string) Cache {
+	return d.caches[d.distribution(key, d.size)]
 }
 
 // BUG(djherbis): Return an error if cleaning fails
@@ -64,4 +55,31 @@ func (d *distrib) Clean() error {
 		c.Clean()
 	}
 	return nil
+}
+
+// NewPartition returns a Cache which uses the Caches defined by the passed Distributor.
+func NewPartition(d Distributor) Cache {
+	return &partition{
+		distributor: d,
+	}
+}
+
+type partition struct {
+	distributor Distributor
+}
+
+func (p *partition) Get(key string) (io.ReadCloser, io.WriteCloser, error) {
+	return p.distributor.GetCache(key).Get(key)
+}
+
+func (p *partition) Remove(key string) error {
+	return p.distributor.GetCache(key).Remove(key)
+}
+
+func (p *partition) Exists(key string) bool {
+	return p.distributor.GetCache(key).Exists(key)
+}
+
+func (p *partition) Clean() error {
+	return p.distributor.Clean()
 }
