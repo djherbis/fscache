@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/djherbis/atime"
 )
 
 // FileSystem is used as the source for a Cache.
@@ -141,7 +143,7 @@ func (fs *stdFs) AccessTimes(name string) (rt, wt time.Time, err error) {
 	if err != nil {
 		return rt, wt, err
 	}
-	return atime(fi), fi.ModTime(), nil
+	return atime.Get(fi), fi.ModTime(), nil
 }
 
 const (
