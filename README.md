@@ -23,6 +23,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/djherbis/fscache"
 )
