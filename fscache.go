@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/djherbis/stream"
 )
 
 // Cache works like a concurrent-safe map for streams.
@@ -90,14 +92,14 @@ func (c *cache) haunt() {
 			continue
 		}
 
-		lastRead, lastWrite, err := c.fs.AccessTimes(f.name)
+		lastRead, lastWrite, err := c.fs.AccessTimes(f.stream.Name())
 		if err != nil {
 			continue
 		}
 
 		if c.grim.Reap(key, lastRead, lastWrite) {
 			delete(c.files, key)
-			c.fs.Remove(f.name)
+			c.fs.Remove(f.stream.Name())
 		}
 	}
 	return
@@ -145,7 +147,7 @@ func (c *cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
 	r, err = f.next()
 	if err != nil {
 		f.Close()
-		c.fs.Remove(f.name)
+		c.fs.Remove(f.stream.Name())
 		return nil, nil, err
 	}
 
@@ -161,8 +163,7 @@ func (c *cache) Remove(key string) error {
 	c.mu.Unlock()
 
 	if ok {
-		f.grp.Wait()
-		return c.fs.Remove(f.name)
+		return f.stream.Remove()
 	}
 	return nil
 }
@@ -175,105 +176,62 @@ func (c *cache) Clean() error {
 }
 
 type cachedFile struct {
-	fs   FileSystem
-	name string
-	cnt  int64
-	grp  sync.WaitGroup
-	w    io.WriteCloser
-	b    *broadcaster
+	stream *stream.Stream
+	cnt    int64
 }
 
 func (c *cache) newFile(name string) (*cachedFile, error) {
-	f, err := c.fs.Create(name)
+	s, err := stream.NewStream(name, c.fs)
 	if err != nil {
 		return nil, err
 	}
 	cf := &cachedFile{
-		fs:   c.fs,
-		name: f.Name(),
-		w:    f,
-		b:    newBroadcaster(),
+		stream: s,
 	}
-	cf.grp.Add(1)
 	atomic.AddInt64(&cf.cnt, 1)
 	return cf, nil
 }
 
 func (c *cache) oldFile(name string) *cachedFile {
-	b := newBroadcaster()
-	b.Close()
-	return &cachedFile{
-		fs:   c.fs,
-		name: name,
-		b:    b,
+	s, _ := stream.NewStream(name, c.fs)
+	s.Close()
+	cf := &cachedFile{
+		stream: s,
 	}
+	return cf
 }
 
 func (f *cachedFile) next() (r io.ReadCloser, err error) {
-	r, err = f.fs.Open(f.name)
+	reader, err := f.stream.NextReader()
 	if err != nil {
 		return nil, err
 	}
-	f.grp.Add(1)
 	atomic.AddInt64(&f.cnt, 1)
 	return &cacheReader{
-		grp: &f.grp,
+		r: reader,
 		cnt: &f.cnt,
-		r:   r,
-		b:   f.b,
 	}, nil
 }
 
 func (f *cachedFile) Write(p []byte) (int, error) {
-	defer f.b.Broadcast()
-	f.b.Lock()
-	defer f.b.Unlock()
-	return f.w.Write(p)
+	return f.stream.Write(p)
 }
 
 func (f *cachedFile) Close() error {
-	defer f.grp.Done()
 	defer func() { atomic.AddInt64(&f.cnt, -1) }()
-	defer f.b.Close()
-	return f.w.Close()
+	return f.stream.Close()
 }
 
 type cacheReader struct {
-	r   io.ReadCloser
-	grp *sync.WaitGroup
+	r   *stream.Reader
 	cnt *int64
-	b   *broadcaster
 }
 
 func (r *cacheReader) Read(p []byte) (n int, err error) {
-	r.b.RLock()
-	defer r.b.RUnlock()
-
-	for {
-
-		n, err = r.r.Read(p)
-
-		if r.b.IsOpen() { // file is still being written to
-
-			if n != 0 && err == nil { // successful read
-				return n, nil
-			} else if err == io.EOF { // no data read, wait for some
-				r.b.RUnlock()
-				r.b.Wait()
-				r.b.RLock()
-			} else if err != nil { // non-nil, non-eof error
-				return n, err
-			}
-
-		} else { // file is closed, just return
-			return n, err
-		}
-
-	}
+	return r.r.Read(p)
 }
 
 func (r *cacheReader) Close() error {
-	defer r.grp.Done()
 	defer func() { atomic.AddInt64(r.cnt, -1) }()
 	return r.r.Close()
 }

@@ -50,6 +50,7 @@ func testCaches(t *testing.T, run func(c Cache)) {
 
 func TestHandler(t *testing.T) {
 	testCaches(t, func(c Cache) {
+		defer c.Clean()
 		ts := httptest.NewServer(Handler(c, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "Hello Client")
 		})))
