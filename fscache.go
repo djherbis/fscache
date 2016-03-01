@@ -18,7 +18,7 @@ type Cache interface {
 	// If the key does exist, w == nil.
 	// r will always be non-nil as long as err == nil and you must close r when you're done reading.
 	// Get can be called concurrently, and writing and reading is concurrent safe.
-	Get(key string) (io.ReadCloser, io.WriteCloser, error)
+	Get(key string) (ReaderAtCloser, io.WriteCloser, error)
 
 	// Remove deletes the stream from the cache, blocking until the underlying
 	// file can be deleted (all active streams finish with it).
@@ -39,6 +39,11 @@ type cache struct {
 	files map[string]*cachedFile
 	grim  Reaper
 	fs    FileSystem
+}
+
+type ReaderAtCloser interface {
+	io.ReadCloser
+	io.ReaderAt
 }
 
 // New creates a new Cache using NewFs(dir, perms).
@@ -120,7 +125,7 @@ func (c *cache) Exists(key string) bool {
 	return ok
 }
 
-func (c *cache) Get(key string) (r io.ReadCloser, w io.WriteCloser, err error) {
+func (c *cache) Get(key string) (r ReaderAtCloser, w io.WriteCloser, err error) {
 	c.mu.RLock()
 	f, ok := c.files[key]
 	if ok {
@@ -201,7 +206,7 @@ func (c *cache) oldFile(name string) *cachedFile {
 	return cf
 }
 
-func (f *cachedFile) next() (r io.ReadCloser, err error) {
+func (f *cachedFile) next() (r ReaderAtCloser, err error) {
 	reader, err := f.stream.NextReader()
 	if err != nil {
 		return nil, err
@@ -223,8 +228,12 @@ func (f *cachedFile) Close() error {
 }
 
 type cacheReader struct {
-	r   *stream.Reader
+	r   ReaderAtCloser
 	cnt *int64
+}
+
+func (r *cacheReader) ReadAt(p []byte, off int64) (n int, err error) {
+	return r.r.ReadAt(p, off)
 }
 
 func (r *cacheReader) Read(p []byte) (n int, err error) {
