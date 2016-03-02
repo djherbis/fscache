@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/djherbis/atime"
+	"github.com/djherbis/stream"
 )
 
 // FileSystem is used as the source for a Cache.
@@ -23,13 +24,13 @@ type FileSystem interface {
 	Reload(func(key, name string)) error
 
 	// Create should return a new File using a name generated from the passed key.
-	Create(key string) (File, error)
+	Create(key string) (stream.File, error)
 
 	// Open takes a File.Name() and returns a concurrent-safe reader to the file.
 	// The reader may return io.EOF when reaches the end of written content, but
 	// if more content is written and Read is called again, it must continue
 	// reading the data.
-	Open(name string) (io.ReadCloser, error)
+	Open(name string) (stream.File, error)
 
 	// Remove takes a File.Name() and deletes the underlying file.
 	// It does not have to worry about concurrent use, the Cache will wait
@@ -44,12 +45,6 @@ type FileSystem interface {
 	// It will be used to check expiry of a file, and must be concurrent safe
 	// with modifications to the FileSystem (writes, reads etc.)
 	AccessTimes(name string) (rt, wt time.Time, err error)
-}
-
-// File wraps the underlying WriteCloser source.
-type File interface {
-	Name() string
-	io.WriteCloser
 }
 
 type stdFs struct {
@@ -113,7 +108,7 @@ func (fs *stdFs) Reload(add func(key, name string)) error {
 	return nil
 }
 
-func (fs *stdFs) Create(name string) (File, error) {
+func (fs *stdFs) Create(name string) (stream.File, error) {
 	name, err := fs.makeName(name)
 	if err != nil {
 		return nil, err
@@ -121,11 +116,11 @@ func (fs *stdFs) Create(name string) (File, error) {
 	return fs.create(name)
 }
 
-func (fs *stdFs) create(name string) (File, error) {
+func (fs *stdFs) create(name string) (stream.File, error) {
 	return os.OpenFile(filepath.Join(fs.root, name), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
-func (fs *stdFs) Open(name string) (io.ReadCloser, error) {
+func (fs *stdFs) Open(name string) (stream.File, error) {
 	return os.Open(name)
 }
 

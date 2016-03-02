@@ -2,6 +2,7 @@ package fscache
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 )
 
@@ -27,6 +28,11 @@ type packet struct {
 }
 
 const eof = 1
+
+func (t *pktReader) ReadAt(p []byte, off int64) (n int, err error) {
+	// TODO not implemented
+	return 0, errors.New("not implemented")
+}
 
 func (t *pktReader) Read(p []byte) (int, error) {
 	var pkt packet
@@ -61,6 +67,6 @@ func newEncoder(w io.Writer) io.WriteCloser {
 	return &pktWriter{enc: json.NewEncoder(w)}
 }
 
-func newDecoder(r io.Reader) io.ReadCloser {
+func newDecoder(r io.Reader) ReaderAtCloser {
 	return &pktReader{dec: json.NewDecoder(r)}
 }

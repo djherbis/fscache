@@ -68,7 +68,7 @@ type partition struct {
 	distributor Distributor
 }
 
-func (p *partition) Get(key string) (io.ReadCloser, io.WriteCloser, error) {
+func (p *partition) Get(key string) (ReaderAtCloser, io.WriteCloser, error) {
 	return p.distributor.GetCache(key).Get(key)
 }
 
