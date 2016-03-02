@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"gopkg.in/djherbis/atime.v1"
-	"gopkin.in/djherbis/stream.v1"
+	"gopkg.in/djherbis/stream.v1"
 )
 
 // FileSystem is used as the source for a Cache.
