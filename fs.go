@@ -19,23 +19,12 @@ import (
 
 // FileSystem is used as the source for a Cache.
 type FileSystem interface {
+	// Stream FileSystem
+	stream.FileSystem
+
 	// Reload should look through the FileSystem and call the suplied fn
 	// with the key/filename pairs that are found.
 	Reload(func(key, name string)) error
-
-	// Create should return a new File using a name generated from the passed key.
-	Create(key string) (stream.File, error)
-
-	// Open takes a File.Name() and returns a concurrent-safe reader to the file.
-	// The reader may return io.EOF when reaches the end of written content, but
-	// if more content is written and Read is called again, it must continue
-	// reading the data.
-	Open(name string) (stream.File, error)
-
-	// Remove takes a File.Name() and deletes the underlying file.
-	// It does not have to worry about concurrent use, the Cache will wait
-	// for all activity in the file to cease.
-	Remove(name string) error
 
 	// RemoveAll should empty the FileSystem of all files.
 	RemoveAll() error
