@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/djherbis/atime"
-	"github.com/djherbis/stream"
+	"gopkg.in/djherbis/atime.v1"
+	"gopkin.in/djherbis/stream.v1"
 )
 
 // FileSystem is used as the source for a Cache.
