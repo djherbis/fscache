@@ -280,7 +280,7 @@ func (r *cacheReader) Close() error {
 
 type handleCounter struct {
 	cnt int64
-	sync.WaitGroup
+	grp sync.WaitGroup
 }
 
 func (h *handleCounter) inc() {
