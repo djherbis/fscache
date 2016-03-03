@@ -6,8 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"gopkg.in/djherbis/stream.v1"
 )
 
 // Cache works like a concurrent-safe map for streams.
@@ -46,7 +44,7 @@ type ReaderAtCloser interface {
 	io.ReaderAt
 }
 
-type fileStream interface{
+type fileStream interface {
 	next() (ReaderAtCloser, error)
 	inUse() bool
 	io.WriteCloser
@@ -190,7 +188,7 @@ func (c *cache) Clean() error {
 
 type cachedFile struct {
 	stream *stream.Stream
-	cnt    int64
+	handleCounter
 }
 
 func (c *cache) newFile(name string) (fileStream, error) {
@@ -201,62 +199,52 @@ func (c *cache) newFile(name string) (fileStream, error) {
 	cf := &cachedFile{
 		stream: s,
 	}
-	atomic.AddInt64(&cf.cnt, 1)
+	cf.inc()
 	return cf, nil
 }
 
 func (c *cache) oldFile(name string) fileStream {
 	return &reloadedFile{
-		fs: c.fs,
+		fs:   c.fs,
 		name: name,
 	}
 }
 
-type reloadedFile struct{
-	fs FileSystem
+type reloadedFile struct {
+	fs   FileSystem
 	name string
-	cnt int64
-	grp sync.WaitGroup
+	handleCounter
 	io.WriteCloser // nop Write & Close methods. will never be called.
 }
 
 func (f *reloadedFile) Name() string { return f.name }
 
-func (f *reloadedFile) inUse() bool {
-	return atomic.LoadInt64(&f.cnt) > 0
-}
-
 func (f *reloadedFile) Remove() error {
-	// TODO(djherbis): should block until all handles are freed.
+	f.waitUntilFree()
 	return f.fs.Remove(f.name)
 }
 
 func (f *reloadedFile) next() (r ReaderAtCloser, err error) {
 	r, err = f.fs.Open(f.name)
 	if err == nil {
-		atomic.AddInt64(&f.cnt, 1)
-		f.grp.Add(1)
+		f.inc()
 	}
-	return &cacheReader{r: r, cnt: &f.cnt}, err
+	return &cacheReader{r: r, cnt: &f.handleCounter}, err
 }
 
 func (f *cachedFile) Name() string { return f.stream.Name() }
 
 func (f *cachedFile) Remove() error { return f.stream.Remove() }
 
-func (f *cachedFile) inUse() bool {
-	return atomic.LoadInt64(&f.cnt) > 0
-}
-
 func (f *cachedFile) next() (r ReaderAtCloser, err error) {
 	reader, err := f.stream.NextReader()
 	if err != nil {
 		return nil, err
 	}
-	atomic.AddInt64(&f.cnt, 1)
+	f.inc()
 	return &cacheReader{
-		r: reader,
-		cnt: &f.cnt,
+		r:   reader,
+		cnt: &f.handleCounter,
 	}, nil
 }
 
@@ -265,13 +253,13 @@ func (f *cachedFile) Write(p []byte) (int, error) {
 }
 
 func (f *cachedFile) Close() error {
-	defer func() { atomic.AddInt64(&f.cnt, -1) }()
+	defer f.dec()
 	return f.stream.Close()
 }
 
 type cacheReader struct {
 	r   ReaderAtCloser
-	cnt *int64
+	cnt *handleCounter
 }
 
 func (r *cacheReader) ReadAt(p []byte, off int64) (n int, err error) {
@@ -283,6 +271,29 @@ func (r *cacheReader) Read(p []byte) (n int, err error) {
 }
 
 func (r *cacheReader) Close() error {
-	defer func() { atomic.AddInt64(r.cnt, -1) }()
+	defer r.cnt.dec()
 	return r.r.Close()
+}
+
+type handleCounter struct {
+	cnt int64
+	sync.WaitGroup
+}
+
+func (h *handleCounter) inc() {
+	h.grp.Add(1)
+	atomic.AddInt64(&h.cnt, 1)
+}
+
+func (h *handleCounter) dec() {
+	atomic.AddInt64(&h.cnt, -1)
+	h.grp.Done()
+}
+
+func (h *handleCounter) inUse() bool {
+	return atomic.LoadInt64(&h.cnt) > 0
+}
+
+func (h *handleCounter) waitUntilFree() {
+	h.grp.Wait()
 }
