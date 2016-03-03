@@ -93,7 +93,7 @@ func (c *cache) haunt() {
 	defer c.mu.Unlock()
 
 	for key, f := range c.files {
-		if atomic.LoadInt64(&f.cnt) > 0 {
+		if f.inUse() {
 			continue
 		}
 
@@ -204,6 +204,10 @@ func (c *cache) oldFile(name string) *cachedFile {
 		stream: s,
 	}
 	return cf
+}
+
+func (f *cachedFile) inUse() bool {
+	return atomic.LoadInt64(&f.cnt) > 0	
 }
 
 func (f *cachedFile) next() (r ReaderAtCloser, err error) {
