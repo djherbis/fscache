@@ -36,7 +36,7 @@ type Cache interface {
 
 type cache struct {
 	mu    sync.RWMutex
-	files map[string]*cachedFile
+	files map[string]fileStream
 	grim  Reaper
 	fs    FileSystem
 }
@@ -44,6 +44,12 @@ type cache struct {
 type ReaderAtCloser interface {
 	io.ReadCloser
 	io.ReaderAt
+}
+
+type fileStream interface{
+	next() (ReaderAtCloser, error)
+	inUse() bool
+	io.WriteCloser
 }
 
 // New creates a new Cache using NewFs(dir, perms).
@@ -69,7 +75,7 @@ func New(dir string, perms os.FileMode, expiry time.Duration) (Cache, error) {
 // Reaper is used to determine when files expire, nil means never expire.
 func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
 	c := &cache{
-		files: make(map[string]*cachedFile),
+		files: make(map[string]fileStream),
 		grim:  grim,
 		fs:    fs,
 	}
@@ -185,7 +191,7 @@ type cachedFile struct {
 	cnt    int64
 }
 
-func (c *cache) newFile(name string) (*cachedFile, error) {
+func (c *cache) newFile(name string) (fileStream, error) {
 	s, err := stream.NewStream(name, c.fs)
 	if err != nil {
 		return nil, err
@@ -197,17 +203,34 @@ func (c *cache) newFile(name string) (*cachedFile, error) {
 	return cf, nil
 }
 
-func (c *cache) oldFile(name string) *cachedFile {
-	s, _ := stream.NewStream(name, c.fs)
-	s.Close()
-	cf := &cachedFile{
-		stream: s,
+func (c *cache) oldFile(name string) fileStream {
+	return reloadedFile{
+		fs: c.fs,
+		name: name,
 	}
-	return cf
+}
+
+type reloadedFile struct{
+	fs FileSystem
+	name string
+	cnt int64
+	io.WriteCloser // nop Write & Close methods. will never be called.
+}
+
+func (f *reloadedFile) inUse() bool {
+	return atomic.LoadInt64(&f.cnt) > 0
+}
+
+func (f *reloadedFile) next() (r ReaderAtCloser, err error) {
+	r, err = f.fs.Open(f.name)
+	if err == nil {
+		atomic.AddInt64(&f.cnt, 1)
+	}
+	return &cacheReader{r: r, cnt: &f.cnt}, err
 }
 
 func (f *cachedFile) inUse() bool {
-	return atomic.LoadInt64(&f.cnt) > 0	
+	return atomic.LoadInt64(&f.cnt) > 0
 }
 
 func (f *cachedFile) next() (r ReaderAtCloser, err error) {
