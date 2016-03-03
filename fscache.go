@@ -50,6 +50,8 @@ type fileStream interface{
 	next() (ReaderAtCloser, error)
 	inUse() bool
 	io.WriteCloser
+	Remove() error
+	Name() string
 }
 
 // New creates a new Cache using NewFs(dir, perms).
@@ -103,14 +105,14 @@ func (c *cache) haunt() {
 			continue
 		}
 
-		lastRead, lastWrite, err := c.fs.AccessTimes(f.stream.Name())
+		lastRead, lastWrite, err := c.fs.AccessTimes(f.Name())
 		if err != nil {
 			continue
 		}
 
 		if c.grim.Reap(key, lastRead, lastWrite) {
 			delete(c.files, key)
-			c.fs.Remove(f.stream.Name())
+			c.fs.Remove(f.Name())
 		}
 	}
 	return
@@ -158,7 +160,7 @@ func (c *cache) Get(key string) (r ReaderAtCloser, w io.WriteCloser, err error) 
 	r, err = f.next()
 	if err != nil {
 		f.Close()
-		c.fs.Remove(f.stream.Name())
+		c.fs.Remove(f.Name())
 		return nil, nil, err
 	}
 
@@ -174,7 +176,7 @@ func (c *cache) Remove(key string) error {
 	c.mu.Unlock()
 
 	if ok {
-		return f.stream.Remove()
+		return f.Remove()
 	}
 	return nil
 }
@@ -214,20 +216,33 @@ type reloadedFile struct{
 	fs FileSystem
 	name string
 	cnt int64
+	grp sync.WaitGroup
 	io.WriteCloser // nop Write & Close methods. will never be called.
 }
 
+func (f *reloadedFile) Name() string { return f.name }
+
 func (f *reloadedFile) inUse() bool {
 	return atomic.LoadInt64(&f.cnt) > 0
+}
+
+func (f *reloadedFile) Remove() error {
+	// TODO(djherbis): should block until all handles are freed.
+	f.fs.Remove(f.name)
 }
 
 func (f *reloadedFile) next() (r ReaderAtCloser, err error) {
 	r, err = f.fs.Open(f.name)
 	if err == nil {
 		atomic.AddInt64(&f.cnt, 1)
+		f.grp.Add(1)
 	}
 	return &cacheReader{r: r, cnt: &f.cnt}, err
 }
+
+func (f *cachedFile) Name() string { return f.stream.Name() }
+
+func (f *cachedFile) Remove() error { return f.stream.Remove() }
 
 func (f *cachedFile) inUse() bool {
 	return atomic.LoadInt64(&f.cnt) > 0
