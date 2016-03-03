@@ -184,7 +184,7 @@ func (c *cache) Remove(key string) error {
 func (c *cache) Clean() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.files = make(map[string]*cachedFile)
+	c.files = make(map[string]fileStream)
 	return c.fs.RemoveAll()
 }
 
@@ -206,7 +206,7 @@ func (c *cache) newFile(name string) (fileStream, error) {
 }
 
 func (c *cache) oldFile(name string) fileStream {
-	return reloadedFile{
+	return &reloadedFile{
 		fs: c.fs,
 		name: name,
 	}
@@ -228,7 +228,7 @@ func (f *reloadedFile) inUse() bool {
 
 func (f *reloadedFile) Remove() error {
 	// TODO(djherbis): should block until all handles are freed.
-	f.fs.Remove(f.name)
+	return f.fs.Remove(f.name)
 }
 
 func (f *reloadedFile) next() (r ReaderAtCloser, err error) {
