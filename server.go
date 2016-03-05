@@ -108,7 +108,7 @@ type remote struct {
 	raddr string
 }
 
-func (rmt *remote) Get(key string) (r ReaderAtCloser, w io.WriteCloser, err error) {
+func (rmt *remote) Get(key string) (r ReadAtCloser, w io.WriteCloser, err error) {
 	c, err := net.Dial("tcp", rmt.raddr)
 	if err != nil {
 		return nil, nil, err
@@ -148,11 +148,11 @@ func (rmt *remote) Get(key string) (r ReaderAtCloser, w io.WriteCloser, err erro
 type safeCloser struct {
 	c  net.Conn
 	ch chan<- struct{}
-	r  ReaderAtCloser
+	r  ReadAtCloser
 	w  io.WriteCloser
 }
 
-func (s *safeCloser) ReadAt(p []byte, off int64) (int, error)  {
+func (s *safeCloser) ReadAt(p []byte, off int64) (int, error) {
 	return s.r.ReadAt(p, off)
 }
 func (s *safeCloser) Read(p []byte) (int, error)  { return s.r.Read(p) }

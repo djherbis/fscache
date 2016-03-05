@@ -67,6 +67,6 @@ func newEncoder(w io.Writer) io.WriteCloser {
 	return &pktWriter{enc: json.NewEncoder(w)}
 }
 
-func newDecoder(r io.Reader) ReaderAtCloser {
+func newDecoder(r io.Reader) ReadAtCloser {
 	return &pktReader{dec: json.NewDecoder(r)}
 }

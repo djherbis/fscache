@@ -6,8 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"gopkg.in/djherbis/stream.v1"
 )
 
 // Cache works like a concurrent-safe map for streams.
@@ -18,7 +16,7 @@ type Cache interface {
 	// If the key does exist, w == nil.
 	// r will always be non-nil as long as err == nil and you must close r when you're done reading.
 	// Get can be called concurrently, and writing and reading is concurrent safe.
-	Get(key string) (ReaderAtCloser, io.WriteCloser, error)
+	Get(key string) (ReadAtCloser, io.WriteCloser, error)
 
 	// Remove deletes the stream from the cache, blocking until the underlying
 	// file can be deleted (all active streams finish with it).
@@ -41,13 +39,13 @@ type cache struct {
 	fs    FileSystem
 }
 
-type ReaderAtCloser interface {
+type ReadAtCloser interface {
 	io.ReadCloser
 	io.ReaderAt
 }
 
 type fileStream interface {
-	next() (ReaderAtCloser, error)
+	next() (ReadAtCloser, error)
 	inUse() bool
 	io.WriteCloser
 	Remove() error
@@ -133,7 +131,7 @@ func (c *cache) Exists(key string) bool {
 	return ok
 }
 
-func (c *cache) Get(key string) (r ReaderAtCloser, w io.WriteCloser, err error) {
+func (c *cache) Get(key string) (r ReadAtCloser, w io.WriteCloser, err error) {
 	c.mu.RLock()
 	f, ok := c.files[key]
 	if ok {
@@ -226,7 +224,7 @@ func (f *reloadedFile) Remove() error {
 	return f.fs.Remove(f.name)
 }
 
-func (f *reloadedFile) next() (r ReaderAtCloser, err error) {
+func (f *reloadedFile) next() (r ReadAtCloser, err error) {
 	r, err = f.fs.Open(f.name)
 	if err == nil {
 		f.inc()
@@ -238,7 +236,7 @@ func (f *cachedFile) Name() string { return f.stream.Name() }
 
 func (f *cachedFile) Remove() error { return f.stream.Remove() }
 
-func (f *cachedFile) next() (r ReaderAtCloser, err error) {
+func (f *cachedFile) next() (r ReadAtCloser, err error) {
 	reader, err := f.stream.NextReader()
 	if err != nil {
 		return nil, err
@@ -260,7 +258,7 @@ func (f *cachedFile) Close() error {
 }
 
 type cacheReader struct {
-	r   ReaderAtCloser
+	r   ReadAtCloser
 	cnt *handleCounter
 }
 
