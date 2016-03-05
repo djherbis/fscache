@@ -25,7 +25,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/djherbis/fscache"
+	"gopkg.in/djherbis/fscache.v0"
 )
 
 func main() {
@@ -69,7 +69,7 @@ import(
 	"net/http"
 	"time"
 
-	"github.com/djherbis/fscache"
+	"gopkg.in/djherbis/fscache.v0"
 )
 
 func main(){
@@ -89,5 +89,5 @@ func main(){
 Installation
 ------------
 ```sh
-go get github.com/djherbis/fscache
+go get gopkg.in/djherbis/fscache.v0
 ```
