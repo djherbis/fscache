@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	
+	"gopkg.in/djherbis/stream.v1"
 )
 
 // Cache works like a concurrent-safe map for streams.
