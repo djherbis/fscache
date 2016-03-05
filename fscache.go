@@ -39,6 +39,8 @@ type cache struct {
 	fs    FileSystem
 }
 
+// ReadAtCloser is an io.ReadCloser, and an io.ReaderAt. It supports both so that Range
+// Requests are possible.
 type ReadAtCloser interface {
 	io.ReadCloser
 	io.ReaderAt
