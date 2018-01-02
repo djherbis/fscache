@@ -22,7 +22,7 @@ type FileSystem interface {
 	// Stream FileSystem
 	stream.FileSystem
 
-	// Reload should look through the FileSystem and call the suplied fn
+	// Reload should look through the FileSystem and call the supplied fn
 	// with the key/filename pairs that are found.
 	Reload(func(key, name string)) error
 

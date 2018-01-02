@@ -19,7 +19,7 @@ func createFile(name string) (*os.File, error) {
 }
 
 func init() {
-	c, _ := NewCache(NewMemFs(), nil)
+	c, _ := NewCache(NewMemFs(), nil, nil)
 	go ListenAndServe(c, ":10000")
 }
 
@@ -31,14 +31,14 @@ func testCaches(t *testing.T, run func(c Cache)) {
 	}
 	run(c)
 
-	c, err = NewCache(NewMemFs(), NewReaper(time.Hour, time.Hour))
+	c, err = NewCache(NewMemFs(), NewReaper(time.Hour, time.Hour), nil)
 	if err != nil {
 		t.Error(err.Error())
 		return
 	}
 	run(c)
 
-	c2, _ := NewCache(NewMemFs(), nil)
+	c2, _ := NewCache(NewMemFs(), nil, nil)
 	run(NewPartition(NewDistributor(c, c2)))
 
 	lc := NewLayered(c, c2)
@@ -211,6 +211,114 @@ func TestReload(t *testing.T) {
 	}
 }
 
+func TestJanitorMaxItems(t *testing.T) {
+
+	fs, err := NewFs("./cache1", 0700)
+	if err != nil {
+		t.Error(err.Error())
+		t.FailNow()
+	}
+
+	c, err := NewCache(fs, nil, NewJanitor(3, 0, 400*time.Millisecond))
+
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer c.Clean()
+
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("stream-%v", i)
+		r, w, _ := c.Get(name)
+		w.Write([]byte("hello"))
+		w.Close()
+		io.Copy(ioutil.Discard, r)
+
+		if !c.Exists(name) {
+			t.Errorf(name + " should exist")
+		}
+
+		<-time.After(10 * time.Millisecond)
+
+		err := r.Close()
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	<-time.After(400 * time.Millisecond)
+
+	if c.Exists("stream-0") {
+		t.Errorf("stream-0 should have been scrubbed")
+	}
+
+	if c.Exists("stream-1") {
+		t.Errorf("stream-1 should have been scrubbed")
+	}
+
+	files, err := ioutil.ReadDir("./cache1")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+
+	if len(files) != 3 {
+		t.Errorf("expected 3 items in directory")
+	}
+}
+
+func TestJanitorMaxSize(t *testing.T) {
+
+	fs, err := NewFs("./cache1", 0700)
+	if err != nil {
+		t.Error(err.Error())
+		t.FailNow()
+	}
+
+	c, err := NewCache(fs, nil, NewJanitor(0, 24, 400*time.Millisecond))
+
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer c.Clean()
+
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("stream-%v", i)
+		r, w, _ := c.Get(name)
+		w.Write([]byte("hello"))
+		w.Close()
+		io.Copy(ioutil.Discard, r)
+
+		if !c.Exists(name) {
+			t.Errorf(name + " should exist")
+		}
+
+		<-time.After(10 * time.Millisecond)
+
+		err := r.Close()
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	<-time.After(400 * time.Millisecond)
+
+	if c.Exists("stream-0") {
+		t.Errorf("stream-0 should have been scrubbed")
+	}
+
+	files, err := ioutil.ReadDir("./cache1")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+
+	if len(files) != 4 {
+		t.Errorf("expected 4 items in directory")
+	}
+}
+
 func TestReaper(t *testing.T) {
 	fs, err := NewFs("./cache1", 0700)
 	if err != nil {
@@ -218,7 +326,7 @@ func TestReaper(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond))
+	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond), nil)
 
 	if err != nil {
 		t.Error(err.Error())
