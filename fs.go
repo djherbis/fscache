@@ -65,7 +65,8 @@ func (fs *stdFs) Reload(add func(key, name string)) error {
 
 		key, err := fs.getKey(f.Name())
 		if err != nil {
-			return err
+			fs.Remove(filepath.Join(fs.root, f.Name()))
+			continue
 		}
 		fi, ok := addfiles[key]
 
