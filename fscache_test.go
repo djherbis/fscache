@@ -98,6 +98,37 @@ func TestMemFs(t *testing.T) {
 	fs.RemoveAll()
 }
 
+func TestBoltedFs(t *testing.T) {
+	fs, err := NewBoltedFs("bolt", NewMemFs())
+	if err != nil {
+		t.Error(err)
+	}
+	defer fs.Close()
+	fs.Reload(func(key, name string) {}) // nop
+	if _, err := fs.Open("test"); err == nil {
+		t.Errorf("stream shouldn't exist")
+	}
+	fs.Remove("test")
+
+	f, err := fs.Create("test")
+	if err != nil {
+		t.Errorf("failed to create test")
+	}
+	f.Write([]byte("hello"))
+	f.Close()
+
+	r, err := fs.Open("test")
+	if err != nil {
+		t.Errorf("couldn't open test")
+	}
+	p, err := ioutil.ReadAll(r)
+	r.Close()
+	if !bytes.Equal(p, []byte("hello")) {
+		t.Errorf("expected hello, got %s", string(p))
+	}
+	fs.RemoveAll()
+}
+
 func TestLoadCleanup1(t *testing.T) {
 	os.Mkdir("./cache6", 0700)
 	f, err := createFile(filepath.Join("./cache6", "s11111111"+tob64("test")))
