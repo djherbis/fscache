@@ -38,12 +38,16 @@ type FileSystem interface {
 
 type stdFs struct {
 	root string
+	init func() error
 }
 
 // NewFs returns a FileSystem rooted at directory dir.
 // Dir is created with perms if it doesn't exist.
 func NewFs(dir string, mode os.FileMode) (FileSystem, error) {
-	return &stdFs{root: dir}, os.MkdirAll(dir, mode)
+	fs := &stdFs{root: dir, init: func() error {
+		return os.MkdirAll(dir, mode)
+	}}
+	return fs, fs.init()
 }
 
 func (fs *stdFs) Reload(add func(key, name string)) error {
@@ -120,7 +124,10 @@ func (fs *stdFs) Remove(name string) error {
 }
 
 func (fs *stdFs) RemoveAll() error {
-	return os.RemoveAll(fs.root)
+	if err := os.RemoveAll(fs.root); err != nil {
+		return err
+	}
+	return fs.init()
 }
 
 func (fs *stdFs) AccessTimes(name string) (rt, wt time.Time, err error) {

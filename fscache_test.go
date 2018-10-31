@@ -343,3 +343,37 @@ func TestConcurrent(t *testing.T) {
 		}
 	})
 }
+
+func TestReuse(t *testing.T) {
+	testCaches(t, func(c Cache) {
+		for i := 0; i < 10; i++ {
+			r, w, err := c.Get(longString)
+			if err != nil {
+				t.Error(err.Error())
+				return
+			}
+
+			data := fmt.Sprintf("hello %d", i)
+
+			w.Write([]byte(data))
+			w.Close()
+
+			check(t, r, data)
+			r.Close()
+
+			c.Clean()
+		}
+	})
+}
+
+func check(t *testing.T, r io.Reader, data string) {
+	buf := bytes.NewBuffer(nil)
+	_, err := io.Copy(buf, r)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	if !bytes.Equal(buf.Bytes(), []byte(data)) {
+		t.Errorf("unexpected output %s", buf.Bytes())
+	}
+}
