@@ -23,6 +23,16 @@ func NewMemFs() FileSystem {
 	}
 }
 
+func (fs *memFS) Size(name string) (int64, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	f, ok := fs.files[name]
+	if ok {
+		return int64(len(f.Bytes())), nil
+	}
+	return 0, errors.New("file has not been read")
+}
+
 func (fs *memFS) Reload(add func(key, name string)) error {
 	return nil
 }

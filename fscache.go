@@ -34,13 +34,10 @@ type Cache interface {
 }
 
 type cache struct {
-	maxFiles, maxSize int
-
-	mu     sync.RWMutex
-	files  map[string]fileStream
-	grim   Reaper
-	scrubs Janitor
-	fs     FileSystem
+	mu    sync.RWMutex
+	files map[string]fileStream
+	grim  Reaper
+	fs    FileSystem
 }
 
 // ReadAtCloser is an io.ReadCloser, and an io.ReaderAt. It supports both so that Range
@@ -73,49 +70,17 @@ func New(dir string, perms os.FileMode, expiry time.Duration) (Cache, error) {
 			period: expiry,
 		}
 	}
-	return NewCache(fs, grim, nil)
-}
-
-// New creates a new Cache using NewFs(dir, perms).
-//
-// expiry is the duration after which an un-accessed key will be removed from
-// the cache, a zero value expiro means never expire.
-//
-// scrubbingPeriod is the duration after which the cache will be checked if
-// it has more items than the maxItems or if its size is bigger than maxSize.
-func NewWithLimits(dir string, perms os.FileMode, expiry, scrubbingPeriod time.Duration, maxItems int, maxSize int64) (Cache, error) {
-	fs, err := NewFs(dir, perms)
-	if err != nil {
-		return nil, err
-	}
-	var grim Reaper
-	if expiry > 0 {
-		grim = &reaper{
-			expiry: expiry,
-			period: expiry,
-		}
-	}
-
-	var scrubs Janitor
-	if maxItems > 0 || maxSize > 0 {
-		scrubs = &janitor{
-			period:   scrubbingPeriod,
-			maxItems: maxItems,
-			maxSize:  maxSize,
-		}
-	}
-	return NewCache(fs, grim, scrubs)
+	return NewCache(fs, grim)
 }
 
 // NewCache creates a new Cache based on FileSystem fs.
 // fs.Files() are loaded using the name they were created with as a key.
 // Reaper is used to determine when files expire, nil means never expire.
-func NewCache(fs FileSystem, grim Reaper, scrubs Janitor) (Cache, error) {
+func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
 	c := &cache{
-		files:  make(map[string]fileStream),
-		grim:   grim,
-		scrubs: scrubs,
-		fs:     fs,
+		files: make(map[string]fileStream),
+		grim:  grim,
+		fs:    fs,
 	}
 	err := c.load()
 	if err != nil {
@@ -124,15 +89,7 @@ func NewCache(fs FileSystem, grim Reaper, scrubs Janitor) (Cache, error) {
 	if grim != nil {
 		c.haunter()
 	}
-	if scrubs != nil {
-		c.scrubber()
-	}
 	return c, nil
-}
-
-func (c *cache) scrubber() {
-	c.scrubs.Scrub(c)
-	time.AfterFunc(c.scrubs.Next(), c.scrubber)
 }
 
 func (c *cache) haunter() {
@@ -143,6 +100,17 @@ func (c *cache) haunter() {
 func (c *cache) haunt() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if cr, ok := c.grim.(StatsBasedReaper); ok {
+		for _, key := range cr.ReapUsingStats(CacheStats{cache: c}) {
+			f, ok := c.files[key]
+			delete(c.files, key)
+			if ok {
+				c.fs.Remove(f.Name())
+			}
+		}
+		return
+	}
 
 	for key, f := range c.files {
 		if f.inUse() {

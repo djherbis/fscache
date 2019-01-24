@@ -2,7 +2,6 @@ package fscache
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"time"
 )
@@ -12,44 +11,41 @@ type janitorKV struct {
 	Value fileStream
 }
 
+type CacheStats struct {
+	// public fields / methods to provide info about the Cache state
+	// this can expose the extra info needed by Janitor to decide what to reap
+	cache *cache
+}
+
+type StatsBasedReaper interface {
+	ReapUsingStats(ctx CacheStats) (keysToReap []string)
+}
+
 // Janitor is used to control when there are too many streams
 // or the size of the streams is too big.
 // It is called once right after loading, and then it is run
-// again after every Next() period of time.
-type Janitor interface {
-	// Returns the amount of time to wait before the next scheduled Reaping.
-	Next() time.Duration
-
-	// Given a key and the last r/w times of a file, return true
-	// to remove the file from the cache, false to keep it.
-	Scrub(c *cache)
+// again after every Next() Period of time.
+// Janitor runs every "Period" and scrubs older files
+// when the total file size is over MaxTotalFileSize or
+// total item count is over MaxItems.
+// If MaxItems or MaxTotalFileSize are 0, they won't be checked
+type Janitor struct {
+	Period           time.Duration
+	MaxItems         int
+	MaxTotalFileSize int64
 }
 
-// NewJanitor returns a simple janitor which runs every "period"
-// and scrubs older files when the total file size is over maxSize or
-// total item count is over maxItems.
-// If maxItems or maxSize are 0, they won't be checked
-func NewJanitor(maxItems int, maxSize int64, period time.Duration) Janitor {
-	return &janitor{
-		period:   period,
-		maxItems: maxItems,
-		maxSize:  maxSize,
-	}
+func (j *Janitor) Next() time.Duration {
+	return j.Period
 }
 
-type janitor struct {
-	period   time.Duration
-	maxItems int
-	maxSize  int64
+func (j *Janitor) Reap(_ string, _, _ time.Time) bool {
+	// not implemented: should not get here
+	return false
 }
 
-func (j *janitor) Next() time.Duration {
-	return j.period
-}
-
-func (j *janitor) Scrub(c *cache) {
-
-	if len(c.files) == 0 {
+func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
+	if len(ctx.cache.files) == 0 {
 		return
 	}
 
@@ -57,35 +53,31 @@ func (j *janitor) Scrub(c *cache) {
 	var size int64
 	var okFiles []janitorKV
 
-	c.mu.Lock()
-
-	for k, f := range c.files {
+	for k, f := range ctx.cache.files {
 		if f.inUse() {
 			continue
 		}
 
-		stat, err := os.Stat(f.Name())
+		fileSize, err := ctx.cache.fs.Size(f.Name())
 		if err != nil {
 			continue
 		}
 
 		count++
-		size = size + stat.Size()
+		size = size + fileSize
 		okFiles = append(okFiles, janitorKV{
 			Key:   k,
 			Value: f,
 		})
 	}
 
-	c.mu.Unlock()
-
 	sort.Slice(okFiles, func(i, l int) bool {
-		iLastRead, _, err := c.fs.AccessTimes(okFiles[i].Value.Name())
+		iLastRead, _, err := ctx.cache.fs.AccessTimes(okFiles[i].Value.Name())
 		if err != nil {
 			return false
 		}
 
-		jLastRead, _, err := c.fs.AccessTimes(okFiles[l].Value.Name())
+		jLastRead, _, err := ctx.cache.fs.AccessTimes(okFiles[l].Value.Name())
 		if err != nil {
 			return false
 		}
@@ -93,41 +85,42 @@ func (j *janitor) Scrub(c *cache) {
 		return iLastRead.Before(jLastRead)
 	})
 
-	if j.maxItems > 0 {
-		for count > j.maxItems {
-			count, size = j.removeFirst(c, &okFiles, count, size)
+	if j.MaxItems > 0 {
+		for count > j.MaxItems {
+			var key *string
+			key, count, size = j.removeFirst(ctx.cache, &okFiles, count, size)
+			if key != nil {
+				keysToReap = append(keysToReap, *key)
+			}
 		}
 	}
 
-	if j.maxSize > 0 {
-		for size > j.maxSize {
-			count, size = j.removeFirst(c, &okFiles, count, size)
+	if j.MaxTotalFileSize > 0 {
+		for size > j.MaxTotalFileSize {
+			var key *string
+			key, count, size = j.removeFirst(ctx.cache, &okFiles, count, size)
+			if key != nil {
+				keysToReap = append(keysToReap, *key)
+			}
 		}
 	}
 
+	return keysToReap
 }
 
-func (j *janitor) removeFirst(c *cache, items *[]janitorKV, count int, size int64) (int, int64) {
-
+func (j *Janitor) removeFirst(c *cache, items *[]janitorKV, count int, size int64) (*string, int, int64) {
 	var f janitorKV
 
 	f, *items = (*items)[0], (*items)[1:]
 
-	stat, err := os.Stat(f.Value.Name())
+	fileSize, err := c.fs.Size(f.Value.Name())
 	if err != nil {
 		fmt.Println(err)
-		return count, size
-	}
-
-	err = c.Remove(f.Key)
-	if err != nil {
-		fmt.Println(err)
-		return count, size
+		return nil, count, size
 	}
 
 	count--
-	size = size - stat.Size()
+	size = size - fileSize
 
-	return count, size
-
+	return &f.Key, count, size
 }

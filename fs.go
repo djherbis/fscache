@@ -17,10 +17,16 @@ import (
 	"gopkg.in/djherbis/stream.v1"
 )
 
+type FileSystemStater interface {
+	Size(name string) (int64, error)
+}
+
 // FileSystem is used as the source for a Cache.
 type FileSystem interface {
 	// Stream FileSystem
 	stream.FileSystem
+
+	FileSystemStater
 
 	// Reload should look through the FileSystem and call the supplied fn
 	// with the key/filename pairs that are found.
@@ -48,6 +54,14 @@ func NewFs(dir string, mode os.FileMode) (FileSystem, error) {
 		return os.MkdirAll(dir, mode)
 	}}
 	return fs, fs.init()
+}
+
+func (fs *stdFs) Size(name string) (int64, error) {
+	stat, err := os.Stat(name)
+	if err == nil {
+		return stat.Size(), nil
+	}
+	return 0, err
 }
 
 func (fs *stdFs) Reload(add func(key, name string)) error {

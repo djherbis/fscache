@@ -19,7 +19,7 @@ func createFile(name string) (*os.File, error) {
 }
 
 func init() {
-	c, _ := NewCache(NewMemFs(), nil, nil)
+	c, _ := NewCache(NewMemFs(), nil)
 	go ListenAndServe(c, ":10000")
 }
 
@@ -31,14 +31,14 @@ func testCaches(t *testing.T, run func(c Cache)) {
 	}
 	run(c)
 
-	c, err = NewCache(NewMemFs(), NewReaper(time.Hour, time.Hour), nil)
+	c, err = NewCache(NewMemFs(), NewReaper(time.Hour, time.Hour))
 	if err != nil {
 		t.Error(err.Error())
 		return
 	}
 	run(c)
 
-	c2, _ := NewCache(NewMemFs(), nil, nil)
+	c2, _ := NewCache(NewMemFs(), nil)
 	run(NewPartition(NewDistributor(c, c2)))
 
 	lc := NewLayered(c, c2)
@@ -219,7 +219,7 @@ func TestJanitorMaxItems(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCache(fs, nil, NewJanitor(3, 0, 400*time.Millisecond))
+	c, err := NewCache(fs, &Janitor{Period: 400 * time.Millisecond, MaxItems: 3, MaxTotalFileSize: 0})
 
 	if err != nil {
 		t.Error(err.Error())
@@ -275,7 +275,7 @@ func TestJanitorMaxSize(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCache(fs, nil, NewJanitor(0, 24, 400*time.Millisecond))
+	c, err := NewCache(fs, &Janitor{Period: 400 * time.Millisecond, MaxItems: 0, MaxTotalFileSize: 24})
 
 	if err != nil {
 		t.Error(err.Error())
@@ -326,7 +326,7 @@ func TestReaper(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond), nil)
+	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond))
 
 	if err != nil {
 		t.Error(err.Error())
