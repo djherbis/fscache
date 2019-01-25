@@ -1,7 +1,6 @@
 package fscache
 
 import (
-	"fmt"
 	"sort"
 	"time"
 )
@@ -88,7 +87,11 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 	if j.MaxItems > 0 {
 		for count > j.MaxItems {
 			var key *string
-			key, count, size = j.removeFirst(ctx.cache, &okFiles, count, size)
+			var err error
+			key, count, size, err = j.removeFirst(ctx.cache, &okFiles, count, size)
+			if err != nil {
+				break
+			}
 			if key != nil {
 				keysToReap = append(keysToReap, *key)
 			}
@@ -98,7 +101,11 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 	if j.MaxTotalFileSize > 0 {
 		for size > j.MaxTotalFileSize {
 			var key *string
-			key, count, size = j.removeFirst(ctx.cache, &okFiles, count, size)
+			var err error
+			key, count, size, err = j.removeFirst(ctx.cache, &okFiles, count, size)
+			if err != nil {
+				break
+			}
 			if key != nil {
 				keysToReap = append(keysToReap, *key)
 			}
@@ -108,19 +115,18 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 	return keysToReap
 }
 
-func (j *Janitor) removeFirst(c *cache, items *[]janitorKV, count int, size int64) (*string, int, int64) {
+func (j *Janitor) removeFirst(c *cache, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
 	var f janitorKV
 
 	f, *items = (*items)[0], (*items)[1:]
 
 	fileSize, err := c.fs.Size(f.Value.Name())
 	if err != nil {
-		fmt.Println(err)
-		return nil, count, size
+		return nil, count, size, err
 	}
 
 	count--
 	size = size - fileSize
 
-	return &f.Key, count, size
+	return &f.Key, count, size, nil
 }
