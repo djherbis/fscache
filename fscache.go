@@ -19,9 +19,9 @@ type Cache interface {
 	// Get can be called concurrently, and writing and reading is concurrent safe.
 	Get(key string) (ReadAtCloser, io.WriteCloser, error)
 
-	// Remove deletes the stream from the cache, blocking until the underlying
+	// remove deletes the stream from the cache, blocking until the underlying
 	// file can be deleted (all active streams finish with it).
-	// It is safe to call Remove concurrently with Get.
+	// It is safe to call remove concurrently with Get.
 	Remove(key string) error
 
 	// Exists checks if a key is in the cache.
@@ -51,7 +51,7 @@ type FileStream interface {
 	next() (ReadAtCloser, error)
 	InUse() bool
 	io.WriteCloser
-	Remove() error
+	remove() error
 	Name() string
 }
 
@@ -175,7 +175,7 @@ func (c *cache) Remove(key string) error {
 	c.mu.Unlock()
 
 	if ok {
-		return f.Remove()
+		return f.remove()
 	}
 	return nil
 }
@@ -187,8 +187,12 @@ func (c *cache) Clean() error {
 	return c.fs.RemoveAll()
 }
 
-func (c *cache) FileSystem() FileSystem {
-	return c.fs
+func (c *cache) Size(name string) (int64, error) {
+	return c.fs.Size(name)
+}
+
+func (c *cache) AccessTimes(name string) (rt, wt time.Time, err error) {
+	return c.fs.AccessTimes(name)
 }
 
 func (c *cache) EnumerateFiles(enumerator func(key string, f FileStream) bool) {
@@ -240,7 +244,7 @@ type reloadedFile struct {
 
 func (f *reloadedFile) Name() string { return f.name }
 
-func (f *reloadedFile) Remove() error {
+func (f *reloadedFile) remove() error {
 	f.waitUntilFree()
 	return f.fs.Remove(f.name)
 }
@@ -255,7 +259,7 @@ func (f *reloadedFile) next() (r ReadAtCloser, err error) {
 
 func (f *cachedFile) Name() string { return f.stream.Name() }
 
-func (f *cachedFile) Remove() error { return f.stream.Remove() }
+func (f *cachedFile) remove() error { return f.stream.Remove() }
 
 func (f *cachedFile) next() (r ReadAtCloser, err error) {
 	reader, err := f.stream.NextReader()

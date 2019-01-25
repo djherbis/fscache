@@ -5,14 +5,14 @@ import (
 	"time"
 )
 
-type CacheStats interface {
-	FileSystem() FileSystem
+type CacheAccessor interface {
+	FileSystemStater
 	EnumerateFiles(enumerator func(key string, f FileStream) bool)
 	RemoveFile(key string)
 }
 
 type Haunter interface {
-	Haunt(c CacheStats)
+	Haunt(c CacheAccessor)
 	Next() time.Duration
 }
 
@@ -35,7 +35,7 @@ func NewCompoundHaunter(haunters []Haunter) Haunter {
 	}
 }
 
-func (h *compoundHaunter) Haunt(c CacheStats) {
+func (h *compoundHaunter) Haunt(c CacheAccessor) {
 	for _, haunter := range h.haunters {
 		haunter.Haunt(c)
 	}
@@ -59,7 +59,7 @@ func NewJanitorHaunter(janitor Janitor) Haunter {
 	}
 }
 
-func (h *janitorHaunter) Haunt(c CacheStats) {
+func (h *janitorHaunter) Haunt(c CacheAccessor) {
 	for _, key := range h.janitor.Scrub(c) {
 		c.RemoveFile(key)
 	}
@@ -77,13 +77,13 @@ func NewReaperHaunter(reaper Reaper) Haunter {
 	}
 }
 
-func (h *reaperHaunter) Haunt(c CacheStats) {
+func (h *reaperHaunter) Haunt(c CacheAccessor) {
 	c.EnumerateFiles(func(key string, f FileStream) bool {
 		if f.InUse() {
 			return true
 		}
 
-		lastRead, lastWrite, err := c.FileSystem().AccessTimes(f.Name())
+		lastRead, lastWrite, err := c.AccessTimes(f.Name())
 		if err != nil {
 			return true
 		}

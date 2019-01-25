@@ -20,7 +20,7 @@ type Janitor interface {
 
 	// Given a key and the last r/w times of a file, return true
 	// to remove the file from the cache, false to keep it.
-	Scrub(c CacheStats) []string
+	Scrub(c CacheAccessor) []string
 }
 
 // NewJanitor returns a simple janitor which runs every "period"
@@ -45,7 +45,7 @@ func (j *janitor) Next() time.Duration {
 	return j.period
 }
 
-func (j *janitor) Scrub(c CacheStats) (keysToReap []string) {
+func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 	var count int
 	var size int64
 	var okFiles []janitorKV
@@ -55,7 +55,7 @@ func (j *janitor) Scrub(c CacheStats) (keysToReap []string) {
 			return true
 		}
 
-		fileSize, err := c.FileSystem().Size(f.Name())
+		fileSize, err := c.Size(f.Name())
 		if err != nil {
 			return true
 		}
@@ -71,12 +71,12 @@ func (j *janitor) Scrub(c CacheStats) (keysToReap []string) {
 	})
 
 	sort.Slice(okFiles, func(i, l int) bool {
-		iLastRead, _, err := c.FileSystem().AccessTimes(okFiles[i].Value.Name())
+		iLastRead, _, err := c.AccessTimes(okFiles[i].Value.Name())
 		if err != nil {
 			return false
 		}
 
-		jLastRead, _, err := c.FileSystem().AccessTimes(okFiles[l].Value.Name())
+		jLastRead, _, err := c.AccessTimes(okFiles[l].Value.Name())
 		if err != nil {
 			return false
 		}
@@ -117,12 +117,12 @@ func (j *janitor) Scrub(c CacheStats) (keysToReap []string) {
 	return keysToReap
 }
 
-func (j *janitor) removeFirst(c CacheStats, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
+func (j *janitor) removeFirst(fsStater FileSystemStater, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
 	var f janitorKV
 
 	f, *items = (*items)[0], (*items)[1:]
 
-	fileSize, err := c.FileSystem().Size(f.Value.Name())
+	fileSize, err := fsStater.Size(f.Value.Name())
 	if err != nil {
 		return nil, count, size, err
 	}

@@ -18,7 +18,14 @@ import (
 )
 
 type FileSystemStater interface {
+	// Size takes a File.Name() and returns size of the file
 	Size(name string) (int64, error)
+
+	// AccessTimes takes a File.Name() and returns the last time the file was read,
+	// and the last time it was written to.
+	// It will be used to check expiry of a file, and must be concurrent safe
+	// with modifications to the FileSystem (writes, reads etc.)
+	AccessTimes(name string) (rt, wt time.Time, err error)
 }
 
 // FileSystem is used as the source for a Cache.
@@ -34,12 +41,6 @@ type FileSystem interface {
 
 	// RemoveAll should empty the FileSystem of all files.
 	RemoveAll() error
-
-	// AccessTimes takes a File.Name() and returns the last time the file was read,
-	// and the last time it was written to.
-	// It will be used to check expiry of a file, and must be concurrent safe
-	// with modifications to the FileSystem (writes, reads etc.)
-	AccessTimes(name string) (rt, wt time.Time, err error)
 }
 
 type stdFs struct {
