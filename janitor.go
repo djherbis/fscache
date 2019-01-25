@@ -10,41 +10,43 @@ type janitorKV struct {
 	Value fileStream
 }
 
-type CacheStats struct {
-	// public fields / methods to provide info about the Cache state
-	// this can expose the extra info needed by Janitor to decide what to reap
-	cache *cache
-}
-
-type StatsBasedReaper interface {
-	ReapUsingStats(ctx CacheStats) (keysToReap []string)
-}
-
 // Janitor is used to control when there are too many streams
 // or the size of the streams is too big.
 // It is called once right after loading, and then it is run
-// again after every Next() Period of time.
-// Janitor runs every "Period" and scrubs older files
-// when the total file size is over MaxTotalFileSize or
-// total item count is over MaxItems.
-// If MaxItems or MaxTotalFileSize are 0, they won't be checked
-type Janitor struct {
-	Period           time.Duration
-	MaxItems         int
-	MaxTotalFileSize int64
+// again after every Next() period of time.
+type Janitor interface {
+	// Returns the amount of time to wait before the next scheduled Reaping.
+	Next() time.Duration
+
+	// Given a key and the last r/w times of a file, return true
+	// to remove the file from the cache, false to keep it.
+	Scrub(c *cache) []string
 }
 
-func (j *Janitor) Next() time.Duration {
-	return j.Period
+// NewJanitor returns a simple janitor which runs every "period"
+// and scrubs older files when the total file size is over maxSize or
+// total item count is over maxItems.
+// If maxItems or maxSize are 0, they won't be checked
+func NewJanitor(maxItems int, maxSize int64, period time.Duration) Janitor {
+	return &janitor{
+		period:   period,
+		maxItems: maxItems,
+		maxSize:  maxSize,
+	}
 }
 
-func (j *Janitor) Reap(_ string, _, _ time.Time) bool {
-	// not implemented: should not get here
-	return false
+type janitor struct {
+	period   time.Duration
+	maxItems int
+	maxSize  int64
 }
 
-func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
-	if len(ctx.cache.files) == 0 {
+func (j *janitor) Next() time.Duration {
+	return j.period
+}
+
+func (j *janitor) Scrub(cache *cache) (keysToReap []string) {
+	if len(cache.files) == 0 {
 		return
 	}
 
@@ -52,12 +54,12 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 	var size int64
 	var okFiles []janitorKV
 
-	for k, f := range ctx.cache.files {
+	for k, f := range cache.files {
 		if f.inUse() {
 			continue
 		}
 
-		fileSize, err := ctx.cache.fs.Size(f.Name())
+		fileSize, err := cache.fs.Size(f.Name())
 		if err != nil {
 			continue
 		}
@@ -71,12 +73,12 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 	}
 
 	sort.Slice(okFiles, func(i, l int) bool {
-		iLastRead, _, err := ctx.cache.fs.AccessTimes(okFiles[i].Value.Name())
+		iLastRead, _, err := cache.fs.AccessTimes(okFiles[i].Value.Name())
 		if err != nil {
 			return false
 		}
 
-		jLastRead, _, err := ctx.cache.fs.AccessTimes(okFiles[l].Value.Name())
+		jLastRead, _, err := cache.fs.AccessTimes(okFiles[l].Value.Name())
 		if err != nil {
 			return false
 		}
@@ -84,11 +86,11 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 		return iLastRead.Before(jLastRead)
 	})
 
-	if j.MaxItems > 0 {
-		for count > j.MaxItems {
+	if j.maxItems > 0 {
+		for count > j.maxItems {
 			var key *string
 			var err error
-			key, count, size, err = j.removeFirst(ctx.cache, &okFiles, count, size)
+			key, count, size, err = j.removeFirst(cache, &okFiles, count, size)
 			if err != nil {
 				break
 			}
@@ -98,11 +100,11 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 		}
 	}
 
-	if j.MaxTotalFileSize > 0 {
-		for size > j.MaxTotalFileSize {
+	if j.maxSize > 0 {
+		for size > j.maxSize {
 			var key *string
 			var err error
-			key, count, size, err = j.removeFirst(ctx.cache, &okFiles, count, size)
+			key, count, size, err = j.removeFirst(cache, &okFiles, count, size)
 			if err != nil {
 				break
 			}
@@ -115,7 +117,7 @@ func (j *Janitor) ReapUsingStats(ctx CacheStats) (keysToReap []string) {
 	return keysToReap
 }
 
-func (j *Janitor) removeFirst(c *cache, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
+func (j *janitor) removeFirst(c *cache, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
 	var f janitorKV
 
 	f, *items = (*items)[0], (*items)[1:]

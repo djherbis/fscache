@@ -34,10 +34,10 @@ type Cache interface {
 }
 
 type cache struct {
-	mu    sync.RWMutex
-	files map[string]fileStream
-	grim  Reaper
-	fs    FileSystem
+	mu            sync.RWMutex
+	files         map[string]fileStream
+	fs            FileSystem
+	hauntProvider Haunter
 }
 
 // ReadAtCloser is an io.ReadCloser, and an io.ReaderAt. It supports both so that Range
@@ -77,57 +77,44 @@ func New(dir string, perms os.FileMode, expiry time.Duration) (Cache, error) {
 // fs.Files() are loaded using the name they were created with as a key.
 // Reaper is used to determine when files expire, nil means never expire.
 func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
+	var haunter Haunter
+	if grim != nil {
+		haunter = NewReaperHaunter(grim)
+	}
+
+	return NewCacheWithHaunter(fs, haunter)
+}
+
+// NewCacheWithHaunter create a new Cache based on FileSystem fs.
+// fs.Files() are loaded using the name they were created with as a key.
+// Haunter is used to determine when files expire, nil means never expire.
+func NewCacheWithHaunter(fs FileSystem, haunter Haunter) (Cache, error) {
 	c := &cache{
-		files: make(map[string]fileStream),
-		grim:  grim,
-		fs:    fs,
+		files:         make(map[string]fileStream),
+		hauntProvider: haunter,
+		fs:            fs,
 	}
 	err := c.load()
 	if err != nil {
 		return nil, err
 	}
-	if grim != nil {
+	if haunter != nil {
 		c.haunter()
 	}
+
 	return c, nil
 }
 
 func (c *cache) haunter() {
 	c.haunt()
-	time.AfterFunc(c.grim.Next(), c.haunter)
+	time.AfterFunc(c.hauntProvider.Next(), c.haunter)
 }
 
 func (c *cache) haunt() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if cr, ok := c.grim.(StatsBasedReaper); ok {
-		for _, key := range cr.ReapUsingStats(CacheStats{cache: c}) {
-			f, ok := c.files[key]
-			delete(c.files, key)
-			if ok {
-				c.fs.Remove(f.Name())
-			}
-		}
-		return
-	}
-
-	for key, f := range c.files {
-		if f.inUse() {
-			continue
-		}
-
-		lastRead, lastWrite, err := c.fs.AccessTimes(f.Name())
-		if err != nil {
-			continue
-		}
-
-		if c.grim.Reap(key, lastRead, lastWrite) {
-			delete(c.files, key)
-			c.fs.Remove(f.Name())
-		}
-	}
-	return
+	c.hauntProvider.Haunt(c)
 }
 
 func (c *cache) load() error {

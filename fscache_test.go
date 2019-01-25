@@ -219,7 +219,7 @@ func TestJanitorMaxItems(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCache(fs, &Janitor{Period: 400 * time.Millisecond, MaxItems: 3, MaxTotalFileSize: 0})
+	c, err := NewCacheWithHaunter(fs, NewJanitorHaunter(NewJanitor(3, 0, 400*time.Millisecond)))
 
 	if err != nil {
 		t.Error(err.Error())
@@ -275,7 +275,7 @@ func TestJanitorMaxSize(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCache(fs, &Janitor{Period: 400 * time.Millisecond, MaxItems: 0, MaxTotalFileSize: 24})
+	c, err := NewCacheWithHaunter(fs, NewJanitorHaunter(NewJanitor(0, 24, 400*time.Millisecond)))
 
 	if err != nil {
 		t.Error(err.Error())
