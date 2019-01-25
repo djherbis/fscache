@@ -7,7 +7,7 @@ import (
 
 type janitorKV struct {
 	Key   string
-	Value fileStream
+	Value FileStream
 }
 
 // Janitor is used to control when there are too many streams
@@ -20,7 +20,7 @@ type Janitor interface {
 
 	// Given a key and the last r/w times of a file, return true
 	// to remove the file from the cache, false to keep it.
-	Scrub(c *cache) []string
+	Scrub(c CacheStats) []string
 }
 
 // NewJanitor returns a simple janitor which runs every "period"
@@ -45,40 +45,38 @@ func (j *janitor) Next() time.Duration {
 	return j.period
 }
 
-func (j *janitor) Scrub(cache *cache) (keysToReap []string) {
-	if len(cache.files) == 0 {
-		return
-	}
-
+func (j *janitor) Scrub(c CacheStats) (keysToReap []string) {
 	var count int
 	var size int64
 	var okFiles []janitorKV
 
-	for k, f := range cache.files {
-		if f.inUse() {
-			continue
+	c.EnumerateFiles(func(key string, f FileStream) bool {
+		if f.InUse() {
+			return true
 		}
 
-		fileSize, err := cache.fs.Size(f.Name())
+		fileSize, err := c.FileSystem().Size(f.Name())
 		if err != nil {
-			continue
+			return true
 		}
 
 		count++
 		size = size + fileSize
 		okFiles = append(okFiles, janitorKV{
-			Key:   k,
+			Key:   key,
 			Value: f,
 		})
-	}
+
+		return true
+	})
 
 	sort.Slice(okFiles, func(i, l int) bool {
-		iLastRead, _, err := cache.fs.AccessTimes(okFiles[i].Value.Name())
+		iLastRead, _, err := c.FileSystem().AccessTimes(okFiles[i].Value.Name())
 		if err != nil {
 			return false
 		}
 
-		jLastRead, _, err := cache.fs.AccessTimes(okFiles[l].Value.Name())
+		jLastRead, _, err := c.FileSystem().AccessTimes(okFiles[l].Value.Name())
 		if err != nil {
 			return false
 		}
@@ -86,30 +84,32 @@ func (j *janitor) Scrub(cache *cache) (keysToReap []string) {
 		return iLastRead.Before(jLastRead)
 	})
 
+	collectKeysToReapFn := func() bool {
+		var key *string
+		var err error
+		key, count, size, err = j.removeFirst(c, &okFiles, count, size)
+		if err != nil {
+			return false
+		}
+		if key != nil {
+			keysToReap = append(keysToReap, *key)
+		}
+
+		return true
+	}
+
 	if j.maxItems > 0 {
 		for count > j.maxItems {
-			var key *string
-			var err error
-			key, count, size, err = j.removeFirst(cache, &okFiles, count, size)
-			if err != nil {
+			if !collectKeysToReapFn() {
 				break
-			}
-			if key != nil {
-				keysToReap = append(keysToReap, *key)
 			}
 		}
 	}
 
 	if j.maxSize > 0 {
 		for size > j.maxSize {
-			var key *string
-			var err error
-			key, count, size, err = j.removeFirst(cache, &okFiles, count, size)
-			if err != nil {
+			if !collectKeysToReapFn() {
 				break
-			}
-			if key != nil {
-				keysToReap = append(keysToReap, *key)
 			}
 		}
 	}
@@ -117,12 +117,12 @@ func (j *janitor) Scrub(cache *cache) (keysToReap []string) {
 	return keysToReap
 }
 
-func (j *janitor) removeFirst(c *cache, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
+func (j *janitor) removeFirst(c CacheStats, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
 	var f janitorKV
 
 	f, *items = (*items)[0], (*items)[1:]
 
-	fileSize, err := c.fs.Size(f.Value.Name())
+	fileSize, err := c.FileSystem().Size(f.Value.Name())
 	if err != nil {
 		return nil, count, size, err
 	}

@@ -34,10 +34,10 @@ type Cache interface {
 }
 
 type cache struct {
-	mu            sync.RWMutex
-	files         map[string]fileStream
-	fs            FileSystem
-	hauntProvider Haunter
+	mu      sync.RWMutex
+	files   map[string]FileStream
+	fs      FileSystem
+	haunter Haunter
 }
 
 // ReadAtCloser is an io.ReadCloser, and an io.ReaderAt. It supports both so that Range
@@ -47,9 +47,9 @@ type ReadAtCloser interface {
 	io.ReaderAt
 }
 
-type fileStream interface {
+type FileStream interface {
 	next() (ReadAtCloser, error)
-	inUse() bool
+	InUse() bool
 	io.WriteCloser
 	Remove() error
 	Name() string
@@ -90,31 +90,31 @@ func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
 // Haunter is used to determine when files expire, nil means never expire.
 func NewCacheWithHaunter(fs FileSystem, haunter Haunter) (Cache, error) {
 	c := &cache{
-		files:         make(map[string]fileStream),
-		hauntProvider: haunter,
-		fs:            fs,
+		files:   make(map[string]FileStream),
+		haunter: haunter,
+		fs:      fs,
 	}
 	err := c.load()
 	if err != nil {
 		return nil, err
 	}
 	if haunter != nil {
-		c.haunter()
+		c.scheduleHaunt()
 	}
 
 	return c, nil
 }
 
-func (c *cache) haunter() {
+func (c *cache) scheduleHaunt() {
 	c.haunt()
-	time.AfterFunc(c.hauntProvider.Next(), c.haunter)
+	time.AfterFunc(c.haunter.Next(), c.scheduleHaunt)
 }
 
 func (c *cache) haunt() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.hauntProvider.Haunt(c)
+	c.haunter.Haunt(c)
 }
 
 func (c *cache) load() error {
@@ -183,8 +183,28 @@ func (c *cache) Remove(key string) error {
 func (c *cache) Clean() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.files = make(map[string]fileStream)
+	c.files = make(map[string]FileStream)
 	return c.fs.RemoveAll()
+}
+
+func (c *cache) FileSystem() FileSystem {
+	return c.fs
+}
+
+func (c *cache) EnumerateFiles(enumerator func(key string, f FileStream) bool) {
+	for k, f := range c.files {
+		if !enumerator(k, f) {
+			break
+		}
+	}
+}
+
+func (c *cache) RemoveFile(key string) {
+	f, ok := c.files[key]
+	delete(c.files, key)
+	if ok {
+		c.fs.Remove(f.Name())
+	}
 }
 
 type cachedFile struct {
@@ -192,7 +212,7 @@ type cachedFile struct {
 	handleCounter
 }
 
-func (c *cache) newFile(name string) (fileStream, error) {
+func (c *cache) newFile(name string) (FileStream, error) {
 	s, err := stream.NewStream(name, c.fs)
 	if err != nil {
 		return nil, err
@@ -204,7 +224,7 @@ func (c *cache) newFile(name string) (fileStream, error) {
 	return cf, nil
 }
 
-func (c *cache) oldFile(name string) fileStream {
+func (c *cache) oldFile(name string) FileStream {
 	return &reloadedFile{
 		fs:   c.fs,
 		name: name,
@@ -291,7 +311,7 @@ func (h *handleCounter) dec() {
 	h.grp.Done()
 }
 
-func (h *handleCounter) inUse() bool {
+func (h *handleCounter) InUse() bool {
 	return atomic.LoadInt64(&h.cnt) > 0
 }
 

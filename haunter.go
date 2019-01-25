@@ -5,8 +5,14 @@ import (
 	"time"
 )
 
+type CacheStats interface {
+	FileSystem() FileSystem
+	EnumerateFiles(enumerator func(key string, f FileStream) bool)
+	RemoveFile(key string)
+}
+
 type Haunter interface {
-	Haunt(c *cache)
+	Haunt(c CacheStats)
 	Next() time.Duration
 }
 
@@ -22,14 +28,14 @@ type compoundHaunter struct {
 	haunters []Haunter
 }
 
-// NewCompoundHaunter returns a compound haunter which provides a multi strategy implementation
+// NewCompoundHaunter returns a compound scheduleHaunt which provides a multi strategy implementation
 func NewCompoundHaunter(haunters []Haunter) Haunter {
 	return &compoundHaunter{
 		haunters: haunters,
 	}
 }
 
-func (h *compoundHaunter) Haunt(c *cache) {
+func (h *compoundHaunter) Haunt(c CacheStats) {
 	for _, haunter := range h.haunters {
 		haunter.Haunt(c)
 	}
@@ -46,20 +52,16 @@ func (h *compoundHaunter) Next() time.Duration {
 	return minPeriod
 }
 
-// NewJanitorHaunter returns a simple haunter which provides an implementation Janitor strategy
+// NewJanitorHaunter returns a simple scheduleHaunt which provides an implementation Janitor strategy
 func NewJanitorHaunter(janitor Janitor) Haunter {
 	return &janitorHaunter{
 		janitor: janitor,
 	}
 }
 
-func (h *janitorHaunter) Haunt(c *cache) {
+func (h *janitorHaunter) Haunt(c CacheStats) {
 	for _, key := range h.janitor.Scrub(c) {
-		f, ok := c.files[key]
-		delete(c.files, key)
-		if ok {
-			c.fs.Remove(f.Name())
-		}
+		c.RemoveFile(key)
 	}
 
 }
@@ -68,29 +70,30 @@ func (h *janitorHaunter) Next() time.Duration {
 	return h.janitor.Next()
 }
 
-// NewReaperHaunter returns a simple haunter which provides an implementation Reaper strategy
+// NewReaperHaunter returns a simple scheduleHaunt which provides an implementation Reaper strategy
 func NewReaperHaunter(reaper Reaper) Haunter {
 	return &reaperHaunter{
 		reaper: reaper,
 	}
 }
 
-func (h *reaperHaunter) Haunt(c *cache) {
-	for key, f := range c.files {
-		if f.inUse() {
-			continue
+func (h *reaperHaunter) Haunt(c CacheStats) {
+	c.EnumerateFiles(func(key string, f FileStream) bool {
+		if f.InUse() {
+			return true
 		}
 
-		lastRead, lastWrite, err := c.fs.AccessTimes(f.Name())
+		lastRead, lastWrite, err := c.FileSystem().AccessTimes(f.Name())
 		if err != nil {
-			continue
+			return true
 		}
 
 		if h.reaper.Reap(key, lastRead, lastWrite) {
-			delete(c.files, key)
-			c.fs.Remove(f.Name())
+			c.RemoveFile(key)
 		}
-	}
+
+		return true
+	})
 }
 
 func (h *reaperHaunter) Next() time.Duration {
