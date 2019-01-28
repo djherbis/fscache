@@ -35,7 +35,7 @@ type Cache interface {
 
 type cache struct {
 	mu      sync.RWMutex
-	files   map[string]FileStream
+	files   map[string]fileStream
 	fs      FileSystem
 	haunter Haunter
 }
@@ -47,7 +47,7 @@ type ReadAtCloser interface {
 	io.ReaderAt
 }
 
-type FileStream interface {
+type fileStream interface {
 	next() (ReadAtCloser, error)
 	InUse() bool
 	io.WriteCloser
@@ -90,7 +90,7 @@ func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
 // Haunter is used to determine when files expire, nil means never expire.
 func NewCacheWithHaunter(fs FileSystem, haunter Haunter) (Cache, error) {
 	c := &cache{
-		files:   make(map[string]FileStream),
+		files:   make(map[string]fileStream),
 		haunter: haunter,
 		fs:      fs,
 	}
@@ -183,7 +183,7 @@ func (c *cache) Remove(key string) error {
 func (c *cache) Clean() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.files = make(map[string]FileStream)
+	c.files = make(map[string]fileStream)
 	return c.fs.RemoveAll()
 }
 
@@ -212,7 +212,7 @@ type cachedFile struct {
 	handleCounter
 }
 
-func (c *cache) newFile(name string) (FileStream, error) {
+func (c *cache) newFile(name string) (fileStream, error) {
 	s, err := stream.NewStream(name, c.fs)
 	if err != nil {
 		return nil, err
@@ -224,7 +224,7 @@ func (c *cache) newFile(name string) (FileStream, error) {
 	return cf, nil
 }
 
-func (c *cache) oldFile(name string) FileStream {
+func (c *cache) oldFile(name string) fileStream {
 	return &reloadedFile{
 		fs:   c.fs,
 		name: name,
