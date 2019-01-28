@@ -7,7 +7,7 @@ import (
 
 type janitorKV struct {
 	Key   string
-	Value FileStream
+	Value Entry
 }
 
 // Janitor is used to control when there are too many streams
@@ -49,12 +49,12 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 	var size int64
 	var okFiles []janitorKV
 
-	c.EnumerateFiles(func(key string, f FileStream) bool {
-		if f.InUse() {
+	c.EnumerateEntries(func(key string, e Entry) bool {
+		if e.InUse() {
 			return true
 		}
 
-		fileSize, err := c.Size(f.Name())
+		fileSize, err := c.Size(e.Name())
 		if err != nil {
 			return true
 		}
@@ -63,7 +63,7 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 		size = size + fileSize
 		okFiles = append(okFiles, janitorKV{
 			Key:   key,
-			Value: f,
+			Value: e,
 		})
 
 		return true

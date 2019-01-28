@@ -195,7 +195,7 @@ func (c *cache) AccessTimes(name string) (rt, wt time.Time, err error) {
 	return c.fs.AccessTimes(name)
 }
 
-func (c *cache) EnumerateFiles(enumerator func(key string, f FileStream) bool) {
+func (c *cache) EnumerateEntries(enumerator func(key string, e Entry) bool) {
 	for k, f := range c.files {
 		if !enumerator(k, f) {
 			break

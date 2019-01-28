@@ -4,9 +4,14 @@ import (
 	"time"
 )
 
+type Entry interface {
+	InUse() bool
+	Name() string
+}
+
 type CacheAccessor interface {
 	FileSystemStater
-	EnumerateFiles(enumerator func(key string, f FileStream) bool)
+	EnumerateEntries(enumerator func(key string, e Entry) bool)
 	RemoveFile(key string)
 }
 
@@ -49,12 +54,12 @@ func NewReaperHaunter(reaper Reaper) Haunter {
 }
 
 func (h *reaperHaunter) Haunt(c CacheAccessor) {
-	c.EnumerateFiles(func(key string, f FileStream) bool {
-		if f.InUse() {
+	c.EnumerateEntries(func(key string, e Entry) bool {
+		if e.InUse() {
 			return true
 		}
 
-		lastRead, lastWrite, err := c.AccessTimes(f.Name())
+		lastRead, lastWrite, err := c.AccessTimes(e.Name())
 		if err != nil {
 			return true
 		}
