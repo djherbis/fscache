@@ -19,7 +19,7 @@ type Cache interface {
 	// Get can be called concurrently, and writing and reading is concurrent safe.
 	Get(key string) (ReadAtCloser, io.WriteCloser, error)
 
-	// remove deletes the stream from the cache, blocking until the underlying
+	// Remove deletes the stream from the cache, blocking until the underlying
 	// file can be deleted (all active streams finish with it).
 	// It is safe to call remove concurrently with Get.
 	Remove(key string) error

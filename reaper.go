@@ -4,7 +4,7 @@ import "time"
 
 // Reaper is used to control when streams expire from the cache.
 // It is called once right after loading, and then it is run
-// again after every Next() Period of time.
+// again after every Next() period of time.
 type Reaper interface {
 	// Returns the amount of time to wait before the next scheduled Reaping.
 	Next() time.Duration

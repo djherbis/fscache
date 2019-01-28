@@ -18,8 +18,7 @@ type Janitor interface {
 	// Returns the amount of time to wait before the next scheduled Reaping.
 	Next() time.Duration
 
-	// Given a key and the last r/w times of a file, return true
-	// to remove the file from the cache, false to keep it.
+	// Given a CacheAccessor, return keys to reap list.
 	Scrub(c CacheAccessor) []string
 }
 
