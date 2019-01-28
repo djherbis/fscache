@@ -59,7 +59,12 @@ func (h *reaperHaunter) Haunt(c CacheAccessor) {
 			return true
 		}
 
-		lastRead, lastWrite, err := c.AccessTimes(e.Name())
+		fileInfo, err := c.Stat(e.Name())
+		if err != nil {
+			return true
+		}
+
+		lastRead, lastWrite, err := fileInfo.AccessTimes()
 		if err != nil {
 			return true
 		}

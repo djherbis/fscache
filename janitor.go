@@ -54,13 +54,13 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 			return true
 		}
 
-		fileSize, err := c.Size(e.Name())
+		fileInfo, err := c.Stat(e.Name())
 		if err != nil {
 			return true
 		}
 
 		count++
-		size = size + fileSize
+		size = size + fileInfo.Size()
 		okFiles = append(okFiles, janitorKV{
 			Key:   key,
 			Value: e,
@@ -70,12 +70,22 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 	})
 
 	sort.Slice(okFiles, func(i, l int) bool {
-		iLastRead, _, err := c.AccessTimes(okFiles[i].Value.Name())
+		iFileInfo, err := c.Stat(okFiles[i].Value.Name())
 		if err != nil {
 			return false
 		}
 
-		jLastRead, _, err := c.AccessTimes(okFiles[l].Value.Name())
+		iLastRead, _, err := iFileInfo.AccessTimes()
+		if err != nil {
+			return false
+		}
+
+		jFileInfo, err := c.Stat(okFiles[i].Value.Name())
+		if err != nil {
+			return false
+		}
+
+		jLastRead, _, err := jFileInfo.AccessTimes()
 		if err != nil {
 			return false
 		}
@@ -121,13 +131,13 @@ func (j *janitor) removeFirst(fsStater FileSystemStater, items *[]janitorKV, cou
 
 	f, *items = (*items)[0], (*items)[1:]
 
-	fileSize, err := fsStater.Size(f.Value.Name())
+	fileInfo, err := fsStater.Stat(f.Value.Name())
 	if err != nil {
 		return nil, count, size, err
 	}
 
 	count--
-	size = size - fileSize
+	size = size - fileInfo.Size()
 
 	return &f.Key, count, size, nil
 }

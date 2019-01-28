@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -15,6 +16,41 @@ type memFS struct {
 	files map[string]*memFile
 }
 
+type memFileInfo struct {
+	name string
+	size int64
+	fs   *memFS
+}
+
+func (f *memFileInfo) Name() string {
+	return f.name
+}
+
+func (f *memFileInfo) Size() int64 {
+	return f.size
+}
+
+func (f *memFileInfo) Mode() os.FileMode {
+	return os.ModeIrregular
+}
+
+func (f *memFileInfo) ModTime() time.Time {
+	_, wt, _ := f.fs.accessTimes(f.Name())
+	return wt
+}
+
+func (f *memFileInfo) IsDir() bool {
+	return false
+}
+
+func (f *memFileInfo) Sys() interface{} {
+	return nil
+}
+
+func (f *memFileInfo) AccessTimes() (rt, wt time.Time, err error) {
+	return f.fs.accessTimes(f.Name())
+}
+
 // NewMemFs creates an in-memory FileSystem.
 // It does not support persistence (Reload is a nop).
 func NewMemFs() FileSystem {
@@ -23,7 +59,16 @@ func NewMemFs() FileSystem {
 	}
 }
 
-func (fs *memFS) Size(name string) (int64, error) {
+func (fs *memFS) Stat(name string) (FileInfo, error) {
+	size, err := fs.size(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return &memFileInfo{name: name, size: size, fs: fs}, nil
+}
+
+func (fs *memFS) size(name string) (int64, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	f, ok := fs.files[name]
@@ -37,7 +82,7 @@ func (fs *memFS) Reload(add func(key, name string)) error {
 	return nil
 }
 
-func (fs *memFS) AccessTimes(name string) (rt, wt time.Time, err error) {
+func (fs *memFS) accessTimes(name string) (rt, wt time.Time, err error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	f, ok := fs.files[name]

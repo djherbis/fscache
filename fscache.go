@@ -187,12 +187,8 @@ func (c *cache) Clean() error {
 	return c.fs.RemoveAll()
 }
 
-func (c *cache) Size(name string) (int64, error) {
-	return c.fs.Size(name)
-}
-
-func (c *cache) AccessTimes(name string) (rt, wt time.Time, err error) {
-	return c.fs.AccessTimes(name)
+func (c *cache) Stat(name string) (FileInfo, error) {
+	return c.fs.Stat(name)
 }
 
 func (c *cache) EnumerateEntries(enumerator func(key string, e Entry) bool) {
