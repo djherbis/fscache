@@ -1,7 +1,6 @@
 package fscache
 
 import (
-	"math"
 	"time"
 )
 
@@ -22,34 +21,6 @@ type reaperHaunter struct {
 
 type janitorHaunter struct {
 	janitor Janitor
-}
-
-type compoundHaunter struct {
-	haunters []Haunter
-}
-
-// NewCompoundHaunter returns a compound scheduleHaunt which provides a multi strategy implementation
-func NewCompoundHaunter(haunters []Haunter) Haunter {
-	return &compoundHaunter{
-		haunters: haunters,
-	}
-}
-
-func (h *compoundHaunter) Haunt(c CacheAccessor) {
-	for _, haunter := range h.haunters {
-		haunter.Haunt(c)
-	}
-}
-
-func (h *compoundHaunter) Next() time.Duration {
-	minPeriod := time.Duration(math.MaxInt64)
-	for _, haunter := range h.haunters {
-		if period := haunter.Next(); period < minPeriod {
-			minPeriod = period
-		}
-	}
-
-	return minPeriod
 }
 
 // NewJanitorHaunter returns a simple scheduleHaunt which provides an implementation Janitor strategy
