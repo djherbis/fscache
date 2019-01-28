@@ -69,7 +69,7 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 		return true
 	})
 
-	sort.Slice(okFiles, func(i, l int) bool {
+	sort.Slice(okFiles, func(i, j int) bool {
 		iFileInfo, err := c.Stat(okFiles[i].Value.Name())
 		if err != nil {
 			return false
@@ -80,7 +80,7 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 			return false
 		}
 
-		jFileInfo, err := c.Stat(okFiles[i].Value.Name())
+		jFileInfo, err := c.Stat(okFiles[j].Value.Name())
 		if err != nil {
 			return false
 		}
