@@ -77,12 +77,11 @@ func New(dir string, perms os.FileMode, expiry time.Duration) (Cache, error) {
 // fs.Files() are loaded using the name they were created with as a key.
 // Reaper is used to determine when files expire, nil means never expire.
 func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
-	var haunter Haunter
 	if grim != nil {
-		haunter = NewReaperHaunter(grim)
+		return NewCacheWithHaunter(fs, NewReaperHaunterStrategy(grim))
 	}
 
-	return NewCacheWithHaunter(fs, haunter)
+	return NewCacheWithHaunter(fs, nil)
 }
 
 // NewCacheWithHaunter create a new Cache based on FileSystem fs.

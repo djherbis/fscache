@@ -20,40 +20,40 @@ type Haunter interface {
 	Next() time.Duration
 }
 
-type reaperHaunter struct {
+type reaperHaunterStrategy struct {
 	reaper Reaper
 }
 
-type janitorHaunter struct {
-	janitor Janitor
+type lruHaunterStrategy struct {
+	haunter LRUHaunter
 }
 
-// NewJanitorHaunter returns a simple scheduleHaunt which provides an implementation Janitor strategy
-func NewJanitorHaunter(janitor Janitor) Haunter {
-	return &janitorHaunter{
-		janitor: janitor,
+// NewLRUHaunterStrategy returns a simple scheduleHaunt which provides an implementation LRUHaunter strategy
+func NewLRUHaunterStrategy(haunter LRUHaunter) Haunter {
+	return &lruHaunterStrategy{
+		haunter: haunter,
 	}
 }
 
-func (h *janitorHaunter) Haunt(c CacheAccessor) {
-	for _, key := range h.janitor.Scrub(c) {
+func (h *lruHaunterStrategy) Haunt(c CacheAccessor) {
+	for _, key := range h.haunter.Scrub(c) {
 		c.RemoveFile(key)
 	}
 
 }
 
-func (h *janitorHaunter) Next() time.Duration {
-	return h.janitor.Next()
+func (h *lruHaunterStrategy) Next() time.Duration {
+	return h.haunter.Next()
 }
 
-// NewReaperHaunter returns a simple scheduleHaunt which provides an implementation Reaper strategy
-func NewReaperHaunter(reaper Reaper) Haunter {
-	return &reaperHaunter{
+// NewReaperHaunterStrategy returns a simple scheduleHaunt which provides an implementation Reaper strategy
+func NewReaperHaunterStrategy(reaper Reaper) Haunter {
+	return &reaperHaunterStrategy{
 		reaper: reaper,
 	}
 }
 
-func (h *reaperHaunter) Haunt(c CacheAccessor) {
+func (h *reaperHaunterStrategy) Haunt(c CacheAccessor) {
 	c.EnumerateEntries(func(key string, e Entry) bool {
 		if e.InUse() {
 			return true
@@ -77,6 +77,6 @@ func (h *reaperHaunter) Haunt(c CacheAccessor) {
 	})
 }
 
-func (h *reaperHaunter) Next() time.Duration {
+func (h *reaperHaunterStrategy) Next() time.Duration {
 	return h.reaper.Next()
 }

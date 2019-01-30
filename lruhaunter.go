@@ -5,16 +5,16 @@ import (
 	"time"
 )
 
-type janitorKV struct {
+type lruHaunterKV struct {
 	Key   string
 	Value Entry
 }
 
-// Janitor is used to control when there are too many streams
+// LRUHaunter is used to control when there are too many streams
 // or the size of the streams is too big.
 // It is called once right after loading, and then it is run
 // again after every Next() period of time.
-type Janitor interface {
+type LRUHaunter interface {
 	// Returns the amount of time to wait before the next scheduled Reaping.
 	Next() time.Duration
 
@@ -22,32 +22,32 @@ type Janitor interface {
 	Scrub(c CacheAccessor) []string
 }
 
-// NewJanitor returns a simple janitor which runs every "period"
+// NewLRUHaunter returns a simple haunter which runs every "period"
 // and scrubs older files when the total file size is over maxSize or
 // total item count is over maxItems.
 // If maxItems or maxSize are 0, they won't be checked
-func NewJanitor(maxItems int, maxSize int64, period time.Duration) Janitor {
-	return &janitor{
+func NewLRUHaunter(maxItems int, maxSize int64, period time.Duration) LRUHaunter {
+	return &lruHaunter{
 		period:   period,
 		maxItems: maxItems,
 		maxSize:  maxSize,
 	}
 }
 
-type janitor struct {
+type lruHaunter struct {
 	period   time.Duration
 	maxItems int
 	maxSize  int64
 }
 
-func (j *janitor) Next() time.Duration {
+func (j *lruHaunter) Next() time.Duration {
 	return j.period
 }
 
-func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
+func (j *lruHaunter) Scrub(c CacheAccessor) (keysToReap []string) {
 	var count int
 	var size int64
-	var okFiles []janitorKV
+	var okFiles []lruHaunterKV
 
 	c.EnumerateEntries(func(key string, e Entry) bool {
 		if e.InUse() {
@@ -61,7 +61,7 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 
 		count++
 		size = size + fileInfo.Size()
-		okFiles = append(okFiles, janitorKV{
+		okFiles = append(okFiles, lruHaunterKV{
 			Key:   key,
 			Value: e,
 		})
@@ -126,8 +126,8 @@ func (j *janitor) Scrub(c CacheAccessor) (keysToReap []string) {
 	return keysToReap
 }
 
-func (j *janitor) removeFirst(fsStater FileSystemStater, items *[]janitorKV, count int, size int64) (*string, int, int64, error) {
-	var f janitorKV
+func (j *lruHaunter) removeFirst(fsStater FileSystemStater, items *[]lruHaunterKV, count int, size int64) (*string, int, int64, error) {
+	var f lruHaunterKV
 
 	f, *items = (*items)[0], (*items)[1:]
 

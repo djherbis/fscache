@@ -211,7 +211,7 @@ func TestReload(t *testing.T) {
 	}
 }
 
-func TestJanitorMaxItems(t *testing.T) {
+func TestLRUHaunterMaxItems(t *testing.T) {
 
 	fs, err := NewFs("./cache1", 0700)
 	if err != nil {
@@ -219,7 +219,7 @@ func TestJanitorMaxItems(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCacheWithHaunter(fs, NewJanitorHaunter(NewJanitor(3, 0, 400*time.Millisecond)))
+	c, err := NewCacheWithHaunter(fs, NewLRUHaunterStrategy(NewLRUHaunter(3, 0, 400*time.Millisecond)))
 
 	if err != nil {
 		t.Error(err.Error())
@@ -267,7 +267,7 @@ func TestJanitorMaxItems(t *testing.T) {
 	}
 }
 
-func TestJanitorMaxSize(t *testing.T) {
+func TestLRUHaunterMaxSize(t *testing.T) {
 
 	fs, err := NewFs("./cache1", 0700)
 	if err != nil {
@@ -275,7 +275,7 @@ func TestJanitorMaxSize(t *testing.T) {
 		t.FailNow()
 	}
 
-	c, err := NewCacheWithHaunter(fs, NewJanitorHaunter(NewJanitor(0, 24, 400*time.Millisecond)))
+	c, err := NewCacheWithHaunter(fs, NewLRUHaunterStrategy(NewLRUHaunter(0, 24, 400*time.Millisecond)))
 
 	if err != nil {
 		t.Error(err.Error())
