@@ -64,10 +64,7 @@ func (h *reaperHaunterStrategy) Haunt(c CacheAccessor) {
 			return true
 		}
 
-		lastRead, lastWrite, err := fileInfo.AccessTimes()
-		if err != nil {
-			return true
-		}
+		lastRead, lastWrite := fileInfo.AccessTimes()
 
 		if h.reaper.Reap(key, lastRead, lastWrite) {
 			c.RemoveFile(key)

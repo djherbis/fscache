@@ -29,7 +29,7 @@ type FileInfo interface {
 	// and the last time it was written to.
 	// It will be used to check expiry of a file, and must be concurrent safe
 	// with modifications to the FileSystem (writes, reads etc.)
-	AccessTimes() (rt, wt time.Time, err error)
+	AccessTimes() (rt, wt time.Time)
 }
 
 // FileSystem is used as the source for a Cache.
@@ -57,8 +57,8 @@ type fileInfo struct {
 	os.FileInfo
 }
 
-func (f *fileInfo) AccessTimes() (rt, wt time.Time, err error) {
-	return atime.Get(f.FileInfo), f.FileInfo.ModTime(), nil
+func (f *fileInfo) AccessTimes() (rt, wt time.Time) {
+	return atime.Get(f.FileInfo), f.FileInfo.ModTime()
 }
 
 // NewFs returns a FileSystem rooted at directory dir.

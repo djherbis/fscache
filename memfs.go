@@ -19,7 +19,8 @@ type memFS struct {
 type memFileInfo struct {
 	name string
 	size int64
-	fs   *memFS
+	rt   time.Time
+	wt   time.Time
 }
 
 func (f *memFileInfo) Name() string {
@@ -35,8 +36,7 @@ func (f *memFileInfo) Mode() os.FileMode {
 }
 
 func (f *memFileInfo) ModTime() time.Time {
-	_, wt, _ := f.fs.accessTimes(f.Name())
-	return wt
+	return f.wt
 }
 
 func (f *memFileInfo) IsDir() bool {
@@ -47,8 +47,8 @@ func (f *memFileInfo) Sys() interface{} {
 	return nil
 }
 
-func (f *memFileInfo) AccessTimes() (rt, wt time.Time, err error) {
-	return f.fs.accessTimes(f.Name())
+func (f *memFileInfo) AccessTimes() (rt, wt time.Time) {
+	return f.rt, f.wt
 }
 
 // NewMemFs creates an in-memory FileSystem.
@@ -60,17 +60,22 @@ func NewMemFs() FileSystem {
 }
 
 func (fs *memFS) Stat(name string) (FileInfo, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	f, ok := fs.files[name]
+	if !ok {
+		return nil, errors.New("file has not been read")
+	}
+
 	size, err := fs.size(name)
 	if err != nil {
 		return nil, err
 	}
 
-	return &memFileInfo{name: name, size: size, fs: fs}, nil
+	return &memFileInfo{name: name, size: size, rt: f.rt, wt: f.wt}, nil
 }
 
 func (fs *memFS) size(name string) (int64, error) {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
 	f, ok := fs.files[name]
 	if ok {
 		return int64(len(f.Bytes())), nil
@@ -80,16 +85,6 @@ func (fs *memFS) size(name string) (int64, error) {
 
 func (fs *memFS) Reload(add func(key, name string)) error {
 	return nil
-}
-
-func (fs *memFS) accessTimes(name string) (rt, wt time.Time, err error) {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	f, ok := fs.files[name]
-	if ok {
-		return f.rt, f.wt, nil
-	}
-	return rt, wt, errors.New("file has not been read")
 }
 
 func (fs *memFS) Create(key string) (stream.File, error) {
