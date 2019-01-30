@@ -70,14 +70,6 @@ func NewFs(dir string, mode os.FileMode) (FileSystem, error) {
 	return fs, fs.init()
 }
 
-func (fs *stdFs) Size(name string) (int64, error) {
-	stat, err := os.Stat(name)
-	if err == nil {
-		return stat.Size(), nil
-	}
-	return 0, err
-}
-
 func (fs *stdFs) Reload(add func(key, name string)) error {
 	files, err := ioutil.ReadDir(fs.root)
 	if err != nil {
