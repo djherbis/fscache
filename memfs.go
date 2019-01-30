@@ -16,41 +16,6 @@ type memFS struct {
 	files map[string]*memFile
 }
 
-type memFileInfo struct {
-	name string
-	size int64
-	rt   time.Time
-	wt   time.Time
-}
-
-func (f *memFileInfo) Name() string {
-	return f.name
-}
-
-func (f *memFileInfo) Size() int64 {
-	return f.size
-}
-
-func (f *memFileInfo) Mode() os.FileMode {
-	return os.ModeIrregular
-}
-
-func (f *memFileInfo) ModTime() time.Time {
-	return f.wt
-}
-
-func (f *memFileInfo) IsDir() bool {
-	return false
-}
-
-func (f *memFileInfo) Sys() interface{} {
-	return nil
-}
-
-func (f *memFileInfo) AccessTimes() (rt, wt time.Time) {
-	return f.rt, f.wt
-}
-
 // NewMemFs creates an in-memory FileSystem.
 // It does not support persistence (Reload is a nop).
 func NewMemFs() FileSystem {
@@ -64,15 +29,23 @@ func (fs *memFS) Stat(name string) (FileInfo, error) {
 	defer fs.mu.RUnlock()
 	f, ok := fs.files[name]
 	if !ok {
-		return nil, errors.New("file has not been read")
+		return FileInfo{}, errors.New("file has not been read")
 	}
 
 	size, err := fs.size(name)
 	if err != nil {
-		return nil, err
+		return FileInfo{}, err
 	}
 
-	return &memFileInfo{name: name, size: size, rt: f.rt, wt: f.wt}, nil
+	return FileInfo{
+		name:     name,
+		size:     size,
+		fileMode: os.ModeIrregular,
+		isDir:    false,
+		sys:      nil,
+		rt:       f.rt,
+		wt:       f.wt,
+	}, nil
 }
 
 func (fs *memFS) size(name string) (int64, error) {

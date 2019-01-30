@@ -22,16 +22,6 @@ type FileSystemStater interface {
 	Stat(name string) (FileInfo, error)
 }
 
-type FileInfo interface {
-	os.FileInfo
-
-	// AccessTimes returns the last time the file was read,
-	// and the last time it was written to.
-	// It will be used to check expiry of a file, and must be concurrent safe
-	// with modifications to the FileSystem (writes, reads etc.)
-	AccessTimes() (rt, wt time.Time)
-}
-
 // FileSystem is used as the source for a Cache.
 type FileSystem interface {
 	// Stream FileSystem
@@ -50,15 +40,6 @@ type FileSystem interface {
 type stdFs struct {
 	root string
 	init func() error
-}
-
-type fileInfo struct {
-	name string
-	os.FileInfo
-}
-
-func (f *fileInfo) AccessTimes() (rt, wt time.Time) {
-	return atime.Get(f.FileInfo), f.FileInfo.ModTime()
 }
 
 // NewFs returns a FileSystem rooted at directory dir.
@@ -161,10 +142,18 @@ func (fs *stdFs) AccessTimes(name string) (rt, wt time.Time, err error) {
 func (fs *stdFs) Stat(name string) (FileInfo, error) {
 	stat, err := os.Stat(name)
 	if err != nil {
-		return nil, err
+		return FileInfo{}, err
 	}
 
-	return &fileInfo{name, stat}, nil
+	return FileInfo{
+		name:     name,
+		size:     stat.Size(),
+		fileMode: stat.Mode(),
+		isDir:    stat.IsDir(),
+		sys:      stat.Sys(),
+		rt:       atime.Get(stat),
+		wt:       stat.ModTime(),
+	}, nil
 }
 
 const (
