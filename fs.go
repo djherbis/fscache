@@ -58,11 +58,7 @@ type fileInfo struct {
 }
 
 func (f *fileInfo) AccessTimes() (rt, wt time.Time, err error) {
-	fi, err := os.Stat(f.name)
-	if err != nil {
-		return rt, wt, err
-	}
-	return atime.Get(fi), fi.ModTime(), nil
+	return atime.Get(f.FileInfo), f.FileInfo.ModTime(), nil
 }
 
 // NewFs returns a FileSystem rooted at directory dir.
