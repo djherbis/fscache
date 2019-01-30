@@ -4,9 +4,17 @@ import (
 	"time"
 )
 
-type Entry interface {
-	InUse() bool
-	Name() string
+type Entry struct {
+	name  string
+	inUse bool
+}
+
+func (e *Entry) InUse() bool {
+	return e.inUse
+}
+
+func (e *Entry) Name() string {
+	return e.name
 }
 
 type CacheAccessor interface {

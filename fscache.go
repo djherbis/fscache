@@ -192,7 +192,7 @@ func (c *cache) Stat(name string) (FileInfo, error) {
 
 func (c *cache) EnumerateEntries(enumerator func(key string, e Entry) bool) {
 	for k, f := range c.files {
-		if !enumerator(k, f) {
+		if !enumerator(k, Entry{name: f.Name(), inUse: f.InUse()}) {
 			break
 		}
 	}
