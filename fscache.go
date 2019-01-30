@@ -21,7 +21,7 @@ type Cache interface {
 
 	// Remove deletes the stream from the cache, blocking until the underlying
 	// file can be deleted (all active streams finish with it).
-	// It is safe to call remove concurrently with Get.
+	// It is safe to call Remove concurrently with Get.
 	Remove(key string) error
 
 	// Exists checks if a key is in the cache.
