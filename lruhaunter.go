@@ -75,14 +75,14 @@ func (j *lruHaunter) Scrub(c CacheAccessor) (keysToReap []string) {
 			return false
 		}
 
-		iLastRead, _ := iFileInfo.AccessTimes()
+		iLastRead := iFileInfo.AccessTime()
 
 		jFileInfo, err := c.Stat(okFiles[j].Value.Name())
 		if err != nil {
 			return false
 		}
 
-		jLastRead, _ := jFileInfo.AccessTimes()
+		jLastRead := jFileInfo.AccessTime()
 
 		return iLastRead.Before(jLastRead)
 	})

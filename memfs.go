@@ -35,13 +35,15 @@ func (fs *memFS) Stat(name string) (FileInfo, error) {
 	size := int64(len(f.Bytes()))
 
 	return FileInfo{
-		name:     name,
-		size:     size,
-		fileMode: os.ModeIrregular,
-		isDir:    false,
-		sys:      nil,
-		rt:       f.rt,
-		wt:       f.wt,
+		FileInfo: &fileInfo{
+			name:     name,
+			size:     size,
+			fileMode: os.ModeIrregular,
+			isDir:    false,
+			sys:      nil,
+			wt:       f.wt,
+		},
+		Atime: f.rt,
 	}, nil
 }
 

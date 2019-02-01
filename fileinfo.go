@@ -6,43 +6,46 @@ import (
 )
 
 type FileInfo struct {
+	os.FileInfo
+	Atime time.Time
+}
+
+type fileInfo struct {
 	name     string
 	size     int64
 	fileMode os.FileMode
 	isDir    bool
 	sys      interface{}
-	rt       time.Time
 	wt       time.Time
 }
 
-func (f *FileInfo) Name() string {
+func (f *fileInfo) Name() string {
 	return f.name
 }
 
-func (f *FileInfo) Size() int64 {
+func (f *fileInfo) Size() int64 {
 	return f.size
 }
 
-func (f *FileInfo) Mode() os.FileMode {
+func (f *fileInfo) Mode() os.FileMode {
 	return f.fileMode
 }
 
-func (f *FileInfo) ModTime() time.Time {
+func (f *fileInfo) ModTime() time.Time {
 	return f.wt
 }
 
-func (f *FileInfo) IsDir() bool {
+func (f *fileInfo) IsDir() bool {
 	return f.isDir
 }
 
-func (f *FileInfo) Sys() interface{} {
+func (f *fileInfo) Sys() interface{} {
 	return f.sys
 }
 
-// AccessTimes returns the last time the file was read,
-// and the last time it was written to.
+// AccessTime returns the last time the file was read.
 // It will be used to check expiry of a file, and must be concurrent safe
 // with modifications to the FileSystem (writes, reads etc.)
-func (f *FileInfo) AccessTimes() (rt, wt time.Time) {
-	return f.rt, f.wt
+func (f *FileInfo) AccessTime() time.Time {
+	return f.Atime
 }

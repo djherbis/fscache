@@ -146,13 +146,15 @@ func (fs *stdFs) Stat(name string) (FileInfo, error) {
 	}
 
 	return FileInfo{
-		name:     name,
-		size:     stat.Size(),
-		fileMode: stat.Mode(),
-		isDir:    stat.IsDir(),
-		sys:      stat.Sys(),
-		rt:       atime.Get(stat),
-		wt:       stat.ModTime(),
+		FileInfo: &fileInfo{
+			name:     name,
+			size:     stat.Size(),
+			fileMode: stat.Mode(),
+			isDir:    stat.IsDir(),
+			sys:      stat.Sys(),
+			wt:       stat.ModTime(),
+		},
+		Atime: atime.Get(stat),
 	}, nil
 }
 
