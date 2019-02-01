@@ -32,10 +32,7 @@ func (fs *memFS) Stat(name string) (FileInfo, error) {
 		return FileInfo{}, errors.New("file has not been read")
 	}
 
-	size, err := fs.size(name)
-	if err != nil {
-		return FileInfo{}, err
-	}
+	size := int64(len(f.Bytes()))
 
 	return FileInfo{
 		name:     name,
@@ -46,14 +43,6 @@ func (fs *memFS) Stat(name string) (FileInfo, error) {
 		rt:       f.rt,
 		wt:       f.wt,
 	}, nil
-}
-
-func (fs *memFS) size(name string) (int64, error) {
-	f, ok := fs.files[name]
-	if ok {
-		return int64(len(f.Bytes())), nil
-	}
-	return 0, errors.New("file has not been read")
 }
 
 func (fs *memFS) Reload(add func(key, name string)) error {
