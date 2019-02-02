@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -23,18 +24,31 @@ func NewMemFs() FileSystem {
 	}
 }
 
-func (fs *memFS) Reload(add func(key, name string)) error {
-	return nil
-}
-
-func (fs *memFS) AccessTimes(name string) (rt, wt time.Time, err error) {
+func (fs *memFS) Stat(name string) (FileInfo, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	f, ok := fs.files[name]
-	if ok {
-		return f.rt, f.wt, nil
+	if !ok {
+		return FileInfo{}, errors.New("file has not been read")
 	}
-	return rt, wt, errors.New("file has not been read")
+
+	size := int64(len(f.Bytes()))
+
+	return FileInfo{
+		FileInfo: &fileInfo{
+			name:     name,
+			size:     size,
+			fileMode: os.ModeIrregular,
+			isDir:    false,
+			sys:      nil,
+			wt:       f.wt,
+		},
+		Atime: f.rt,
+	}, nil
+}
+
+func (fs *memFS) Reload(add func(key, name string)) error {
+	return nil
 }
 
 func (fs *memFS) Create(key string) (stream.File, error) {

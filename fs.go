@@ -17,23 +17,24 @@ import (
 	"gopkg.in/djherbis/stream.v1"
 )
 
+type FileSystemStater interface {
+	// Stat takes a File.Name() and returns FileInfo interface
+	Stat(name string) (FileInfo, error)
+}
+
 // FileSystem is used as the source for a Cache.
 type FileSystem interface {
 	// Stream FileSystem
 	stream.FileSystem
 
-	// Reload should look through the FileSystem and call the suplied fn
+	FileSystemStater
+
+	// Reload should look through the FileSystem and call the supplied fn
 	// with the key/filename pairs that are found.
 	Reload(func(key, name string)) error
 
 	// RemoveAll should empty the FileSystem of all files.
 	RemoveAll() error
-
-	// AccessTimes takes a File.Name() and returns the last time the file was read,
-	// and the last time it was written to.
-	// It will be used to check expiry of a file, and must be concurrent safe
-	// with modifications to the FileSystem (writes, reads etc.)
-	AccessTimes(name string) (rt, wt time.Time, err error)
 }
 
 type stdFs struct {
@@ -136,6 +137,15 @@ func (fs *stdFs) AccessTimes(name string) (rt, wt time.Time, err error) {
 		return rt, wt, err
 	}
 	return atime.Get(fi), fi.ModTime(), nil
+}
+
+func (fs *stdFs) Stat(name string) (FileInfo, error) {
+	stat, err := os.Stat(name)
+	if err != nil {
+		return FileInfo{}, err
+	}
+
+	return FileInfo{FileInfo: stat, Atime: atime.Get(stat)}, nil
 }
 
 const (

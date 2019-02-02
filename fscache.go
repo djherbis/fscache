@@ -6,13 +6,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	
+
 	"gopkg.in/djherbis/stream.v1"
 )
 
 // Cache works like a concurrent-safe map for streams.
 type Cache interface {
-
 	// Get manages access to the streams in the cache.
 	// If the key does not exist, w != nil and you can start writing to the stream.
 	// If the key does exist, w == nil.
@@ -35,10 +34,10 @@ type Cache interface {
 }
 
 type cache struct {
-	mu    sync.RWMutex
-	files map[string]fileStream
-	grim  Reaper
-	fs    FileSystem
+	mu      sync.RWMutex
+	files   map[string]fileStream
+	fs      FileSystem
+	haunter Haunter
 }
 
 // ReadAtCloser is an io.ReadCloser, and an io.ReaderAt. It supports both so that Range
@@ -50,9 +49,9 @@ type ReadAtCloser interface {
 
 type fileStream interface {
 	next() (ReadAtCloser, error)
-	inUse() bool
+	InUse() bool
 	io.WriteCloser
-	Remove() error
+	remove() error
 	Name() string
 }
 
@@ -78,46 +77,43 @@ func New(dir string, perms os.FileMode, expiry time.Duration) (Cache, error) {
 // fs.Files() are loaded using the name they were created with as a key.
 // Reaper is used to determine when files expire, nil means never expire.
 func NewCache(fs FileSystem, grim Reaper) (Cache, error) {
+	if grim != nil {
+		return NewCacheWithHaunter(fs, NewReaperHaunterStrategy(grim))
+	}
+
+	return NewCacheWithHaunter(fs, nil)
+}
+
+// NewCacheWithHaunter create a new Cache based on FileSystem fs.
+// fs.Files() are loaded using the name they were created with as a key.
+// Haunter is used to determine when files expire, nil means never expire.
+func NewCacheWithHaunter(fs FileSystem, haunter Haunter) (Cache, error) {
 	c := &cache{
-		files: make(map[string]fileStream),
-		grim:  grim,
-		fs:    fs,
+		files:   make(map[string]fileStream),
+		haunter: haunter,
+		fs:      fs,
 	}
 	err := c.load()
 	if err != nil {
 		return nil, err
 	}
-	if grim != nil {
-		c.haunter()
+	if haunter != nil {
+		c.scheduleHaunt()
 	}
+
 	return c, nil
 }
 
-func (c *cache) haunter() {
+func (c *cache) scheduleHaunt() {
 	c.haunt()
-	time.AfterFunc(c.grim.Next(), c.haunter)
+	time.AfterFunc(c.haunter.Next(), c.scheduleHaunt)
 }
 
 func (c *cache) haunt() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for key, f := range c.files {
-		if f.inUse() {
-			continue
-		}
-
-		lastRead, lastWrite, err := c.fs.AccessTimes(f.Name())
-		if err != nil {
-			continue
-		}
-
-		if c.grim.Reap(key, lastRead, lastWrite) {
-			delete(c.files, key)
-			c.fs.Remove(f.Name())
-		}
-	}
-	return
+	c.haunter.Haunt(c)
 }
 
 func (c *cache) load() error {
@@ -178,7 +174,7 @@ func (c *cache) Remove(key string) error {
 	c.mu.Unlock()
 
 	if ok {
-		return f.Remove()
+		return f.remove()
 	}
 	return nil
 }
@@ -188,6 +184,26 @@ func (c *cache) Clean() error {
 	defer c.mu.Unlock()
 	c.files = make(map[string]fileStream)
 	return c.fs.RemoveAll()
+}
+
+func (c *cache) Stat(name string) (FileInfo, error) {
+	return c.fs.Stat(name)
+}
+
+func (c *cache) EnumerateEntries(enumerator func(key string, e Entry) bool) {
+	for k, f := range c.files {
+		if !enumerator(k, Entry{name: f.Name(), inUse: f.InUse()}) {
+			break
+		}
+	}
+}
+
+func (c *cache) RemoveFile(key string) {
+	f, ok := c.files[key]
+	delete(c.files, key)
+	if ok {
+		c.fs.Remove(f.Name())
+	}
 }
 
 type cachedFile struct {
@@ -223,7 +239,7 @@ type reloadedFile struct {
 
 func (f *reloadedFile) Name() string { return f.name }
 
-func (f *reloadedFile) Remove() error {
+func (f *reloadedFile) remove() error {
 	f.waitUntilFree()
 	return f.fs.Remove(f.name)
 }
@@ -238,7 +254,7 @@ func (f *reloadedFile) next() (r ReadAtCloser, err error) {
 
 func (f *cachedFile) Name() string { return f.stream.Name() }
 
-func (f *cachedFile) Remove() error { return f.stream.Remove() }
+func (f *cachedFile) remove() error { return f.stream.Remove() }
 
 func (f *cachedFile) next() (r ReadAtCloser, err error) {
 	reader, err := f.stream.NextReader()
@@ -294,7 +310,7 @@ func (h *handleCounter) dec() {
 	h.grp.Done()
 }
 
-func (h *handleCounter) inUse() bool {
+func (h *handleCounter) InUse() bool {
 	return atomic.LoadInt64(&h.cnt) > 0
 }
 

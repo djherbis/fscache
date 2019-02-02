@@ -14,7 +14,7 @@ type Reaper interface {
 	Reap(key string, lastRead, lastWrite time.Time) bool
 }
 
-// NewReaper returns a simple reaper which runs every "period"
+// NewReaper returns a simple reaper which runs every "Period"
 // and reaps files which are older than "expiry".
 func NewReaper(expiry, period time.Duration) Reaper {
 	return &reaper{

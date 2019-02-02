@@ -211,6 +211,114 @@ func TestReload(t *testing.T) {
 	}
 }
 
+func TestLRUHaunterMaxItems(t *testing.T) {
+
+	fs, err := NewFs("./cache1", 0700)
+	if err != nil {
+		t.Error(err.Error())
+		t.FailNow()
+	}
+
+	c, err := NewCacheWithHaunter(fs, NewLRUHaunterStrategy(NewLRUHaunter(3, 0, 400*time.Millisecond)))
+
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer c.Clean()
+
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("stream-%v", i)
+		r, w, _ := c.Get(name)
+		w.Write([]byte("hello"))
+		w.Close()
+		io.Copy(ioutil.Discard, r)
+
+		if !c.Exists(name) {
+			t.Errorf(name + " should exist")
+		}
+
+		<-time.After(10 * time.Millisecond)
+
+		err := r.Close()
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	<-time.After(400 * time.Millisecond)
+
+	if c.Exists("stream-0") {
+		t.Errorf("stream-0 should have been scrubbed")
+	}
+
+	if c.Exists("stream-1") {
+		t.Errorf("stream-1 should have been scrubbed")
+	}
+
+	files, err := ioutil.ReadDir("./cache1")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+
+	if len(files) != 3 {
+		t.Errorf("expected 3 items in directory")
+	}
+}
+
+func TestLRUHaunterMaxSize(t *testing.T) {
+
+	fs, err := NewFs("./cache1", 0700)
+	if err != nil {
+		t.Error(err.Error())
+		t.FailNow()
+	}
+
+	c, err := NewCacheWithHaunter(fs, NewLRUHaunterStrategy(NewLRUHaunter(0, 24, 400*time.Millisecond)))
+
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer c.Clean()
+
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("stream-%v", i)
+		r, w, _ := c.Get(name)
+		w.Write([]byte("hello"))
+		w.Close()
+		io.Copy(ioutil.Discard, r)
+
+		if !c.Exists(name) {
+			t.Errorf(name + " should exist")
+		}
+
+		<-time.After(10 * time.Millisecond)
+
+		err := r.Close()
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	<-time.After(400 * time.Millisecond)
+
+	if c.Exists("stream-0") {
+		t.Errorf("stream-0 should have been scrubbed")
+	}
+
+	files, err := ioutil.ReadDir("./cache1")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+
+	if len(files) != 4 {
+		t.Errorf("expected 4 items in directory")
+	}
+}
+
 func TestReaper(t *testing.T) {
 	fs, err := NewFs("./cache1", 0700)
 	if err != nil {
