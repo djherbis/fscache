@@ -145,17 +145,7 @@ func (fs *stdFs) Stat(name string) (FileInfo, error) {
 		return FileInfo{}, err
 	}
 
-	return FileInfo{
-		FileInfo: &fileInfo{
-			name:     name,
-			size:     stat.Size(),
-			fileMode: stat.Mode(),
-			isDir:    stat.IsDir(),
-			sys:      stat.Sys(),
-			wt:       stat.ModTime(),
-		},
-		Atime: atime.Get(stat),
-	}, nil
+	return FileInfo{FileInfo: stat, Atime: atime.Get(stat)}, nil
 }
 
 const (
