@@ -20,7 +20,7 @@ func createFile(name string) (*os.File, error) {
 
 func init() {
 	c, _ := NewCache(NewMemFs(), nil)
-	go ListenAndServe(c, ":10000")
+	go ListenAndServe(c, "localhost:10000")
 }
 
 func testCaches(t *testing.T, run func(c Cache)) {
@@ -44,8 +44,8 @@ func testCaches(t *testing.T, run func(c Cache)) {
 	lc := NewLayered(c, c2)
 	run(lc)
 
-	c = NewRemote("localhost:10000")
-	run(c)
+	rc := NewRemote("localhost:10000")
+	run(rc)
 }
 
 func TestHandler(t *testing.T) {
@@ -180,7 +180,11 @@ func TestLoadCleanup2(t *testing.T) {
 }
 
 func TestReload(t *testing.T) {
-	c, err := New("./cache5", 0700, 0)
+	dir, err := ioutil.TempDir("", "cache5")
+	if err != nil {
+		t.Fatalf("Failed to create TempDir: %v", err)
+	}
+	c, err := New(dir, 0700, 0)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -191,10 +195,11 @@ func TestReload(t *testing.T) {
 		return
 	}
 	r.Close()
-	w.Write([]byte("hello world\n"))
+	data := []byte("hello world\n")
+	w.Write(data)
 	w.Close()
 
-	nc, err := New("./cache5", 0700, 0)
+	nc, err := New(dir, 0700, 0)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -202,12 +207,36 @@ func TestReload(t *testing.T) {
 	defer nc.Clean()
 
 	if !nc.Exists("stream") {
-		t.Errorf("expected stream to be reloaded")
-	} else {
-		nc.Remove("stream")
-		if nc.Exists("stream") {
-			t.Errorf("expected stream to be removed")
-		}
+		t.Fatalf("expected stream to be reloaded")
+	}
+
+	r, w, err = nc.Get("stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w != nil {
+		t.Fatal("expected reloaded stream to not be writable")
+	}
+
+	cr, ok := r.(*CacheReader)
+	if !ok {
+		t.Fatalf("CacheReader should be supported by a normal FS")
+	}
+	size, closed, err := cr.Size()
+	if err != nil {
+		t.Fatalf("Failed to get Size: %v", err)
+	}
+	if !closed {
+		t.Errorf("Expected stream to be closed.")
+	}
+	if size != int64(len(data)) {
+		t.Errorf("Expected size to be %v, but got %v", len(data), size)
+	}
+
+	r.Close()
+	nc.Remove("stream")
+	if nc.Exists("stream") {
+		t.Errorf("expected stream to be removed")
 	}
 }
 
@@ -384,7 +413,7 @@ func TestReaperNoExpire(t *testing.T) {
 			t.Errorf("stream should exist")
 		}
 
-		if lc, ok := c.(*cache); ok {
+		if lc, ok := c.(*FSCache); ok {
 			lc.haunt()
 			if !c.Exists("stream") {
 				t.Errorf("stream shouldn't have been reaped")
@@ -394,6 +423,7 @@ func TestReaperNoExpire(t *testing.T) {
 }
 
 func TestSanity(t *testing.T) {
+	atLeastOneCacheReader := false
 	testCaches(t, func(c Cache) {
 		defer c.Clean()
 
@@ -404,8 +434,48 @@ func TestSanity(t *testing.T) {
 		}
 		defer r.Close()
 
-		w.Write([]byte("hello world\n"))
+		want := []byte("hello world\n")
+		first := want[:5]
+		w.Write(first)
+
+		cr, ok := r.(*CacheReader)
+		if ok {
+			atLeastOneCacheReader = true
+			size, closed, _ := cr.Size()
+			if closed {
+				t.Errorf("Expected stream to be open.")
+			}
+			if size != int64(len(first)) {
+				t.Errorf("Expected size to be %v, but got %v", len(first), size)
+			}
+		}
+
+		second := want[5:]
+		w.Write(second)
+
+		if ok {
+			atLeastOneCacheReader = true
+			size, closed, _ := cr.Size()
+			if closed {
+				t.Errorf("Expected stream to be open.")
+			}
+			if size != int64(len(want)) {
+				t.Errorf("Expected size to be %v, but got %v", len(want), size)
+			}
+		}
+
 		w.Close()
+
+		if ok {
+			atLeastOneCacheReader = true
+			size, closed, _ := cr.Size()
+			if !closed {
+				t.Errorf("Expected stream to be closed.")
+			}
+			if size != int64(len(want)) {
+				t.Errorf("Expected size to be %v, but got %v", len(want), size)
+			}
+		}
 
 		buf := bytes.NewBuffer(nil)
 		_, err = io.Copy(buf, r)
@@ -413,10 +483,13 @@ func TestSanity(t *testing.T) {
 			t.Error(err.Error())
 			return
 		}
-		if !bytes.Equal(buf.Bytes(), []byte("hello world\n")) {
+		if !bytes.Equal(buf.Bytes(), want) {
 			t.Errorf("unexpected output %s", buf.Bytes())
 		}
 	})
+	if !atLeastOneCacheReader {
+		t.Errorf("None of the cache tests covered CacheReader!")
+	}
 }
 
 func TestConcurrent(t *testing.T) {
