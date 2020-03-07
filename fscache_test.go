@@ -536,8 +536,10 @@ func TestReuse(t *testing.T) {
 
 			data := fmt.Sprintf("hello %d", i)
 
-			w.Write([]byte(data))
-			w.Close()
+			if w != nil {
+				w.Write([]byte(data))
+				w.Close()
+			}
 
 			check(t, r, data)
 			r.Close()
