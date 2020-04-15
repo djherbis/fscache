@@ -212,8 +212,8 @@ func (a *accessor) RemoveFile(key string) {
 }
 
 type cachedFile struct {
-	stream *stream.Stream
 	handleCounter
+	stream *stream.Stream
 }
 
 func (c *FSCache) newFile(name string) (fileStream, error) {
@@ -236,9 +236,9 @@ func (c *FSCache) oldFile(name string) fileStream {
 }
 
 type reloadedFile struct {
+	handleCounter
 	fs   FileSystem
 	name string
-	handleCounter
 	io.WriteCloser // nop Write & Close methods. will never be called.
 }
 
