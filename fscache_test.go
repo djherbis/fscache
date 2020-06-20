@@ -557,6 +557,6 @@ func check(t *testing.T, r io.Reader, data string) {
 		return
 	}
 	if !bytes.Equal(buf.Bytes(), []byte(data)) {
-		t.Errorf("unexpected output %s", buf.Bytes())
+		t.Errorf("unexpected output %q, want %q", buf.String(), data)
 	}
 }
