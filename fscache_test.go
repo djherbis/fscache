@@ -46,6 +46,16 @@ func testCaches(t *testing.T, run func(c Cache)) {
 
 	rc := NewRemote("localhost:10000")
 	run(rc)
+
+	fs, _ := NewFs("./cachex", 0700)
+	fs.EncodeKey = IdentityCodeKey
+	fs.DecodeKey = IdentityCodeKey
+	ck, _ := NewCache(fs, NewReaper(time.Hour, time.Hour))
+	ck.SetKeyMapper(func(key string) string {
+		name, _ := B64OrMD5HashEncodeKey(key)
+		return name
+	})
+	run(ck)
 }
 
 func TestHandler(t *testing.T) {

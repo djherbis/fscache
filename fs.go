@@ -3,7 +3,6 @@ package fscache
 import (
 	"bytes"
 	"crypto/md5"
-	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"gopkg.in/djherbis/stream.v1"
 )
 
+// FileSystemStater implementers can provide FileInfo data about a named resource.
 type FileSystemStater interface {
 	// Stat takes a File.Name() and returns FileInfo interface
 	Stat(name string) (FileInfo, error)
@@ -37,21 +37,48 @@ type FileSystem interface {
 	RemoveAll() error
 }
 
-type stdFs struct {
+// StandardFS is an implemenation of FileSystem which writes to the os Filesystem.
+type StandardFS struct {
 	root string
 	init func() error
+
+	// EncodeKey takes a 'name' given to Create and converts it into a
+	// the Filename that should be used. It should return 'true' if
+	// DecodeKey can convert the returned string back to the original 'name'
+	// and false otherwise.
+	// This must be set before the first call to Create.
+	EncodeKey func(string) (string, bool)
+
+	// DecodeKey should convert a given Filename into the original 'name' given to
+	// EncodeKey, and return true if this conversion was possible. Returning false
+	// will cause it to try and lookup a stored 'encodedName.key' file which holds
+	// the original name.
+	DecodeKey func(string) (string, bool)
 }
+
+// IdentityCodeKey works as both an EncodeKey and a DecodeKey func, which just returns
+// it's given argument and true. This is expected to be used when your FSCache
+// uses SetKeyMapper to ensure its internal km(key) value is already a valid filename path.
+func IdentityCodeKey(key string) (string, bool) { return key, true }
 
 // NewFs returns a FileSystem rooted at directory dir.
 // Dir is created with perms if it doesn't exist.
-func NewFs(dir string, mode os.FileMode) (FileSystem, error) {
-	fs := &stdFs{root: dir, init: func() error {
-		return os.MkdirAll(dir, mode)
-	}}
+// This also uses the default EncodeKey/DecodeKey functions B64ORMD5HashEncodeKey/B64DecodeKey.
+func NewFs(dir string, mode os.FileMode) (*StandardFS, error) {
+	fs := &StandardFS{
+		root: dir,
+		init: func() error {
+			return os.MkdirAll(dir, mode)
+		},
+		EncodeKey: B64OrMD5HashEncodeKey,
+		DecodeKey: B64DecodeKey,
+	}
 	return fs, fs.init()
 }
 
-func (fs *stdFs) Reload(add func(key, name string)) error {
+// Reload looks through the dir given to NewFs and returns every key, name pair (Create(key) => name = File.Name())
+// that is managed by this FileSystem.
+func (fs *StandardFS) Reload(add func(key, name string)) error {
 	files, err := ioutil.ReadDir(fs.root)
 	if err != nil {
 		return err
@@ -103,7 +130,9 @@ func (fs *stdFs) Reload(add func(key, name string)) error {
 	return nil
 }
 
-func (fs *stdFs) Create(name string) (stream.File, error) {
+// Create creates a File for the given 'name', it may not use the given name on the
+// os filesystem, that depends on the implementation of EncodeKey used.
+func (fs *StandardFS) Create(name string) (stream.File, error) {
 	name, err := fs.makeName(name)
 	if err != nil {
 		return nil, err
@@ -111,27 +140,33 @@ func (fs *stdFs) Create(name string) (stream.File, error) {
 	return fs.create(name)
 }
 
-func (fs *stdFs) create(name string) (stream.File, error) {
+func (fs *StandardFS) create(name string) (stream.File, error) {
 	return os.OpenFile(filepath.Join(fs.root, name), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
-func (fs *stdFs) Open(name string) (stream.File, error) {
+// Open opens a stream.File for the given File.Name() returned by Create().
+func (fs *StandardFS) Open(name string) (stream.File, error) {
 	return os.Open(name)
 }
 
-func (fs *stdFs) Remove(name string) error {
+// Remove removes a stream.File for the given File.Name() returned by Create().
+func (fs *StandardFS) Remove(name string) error {
 	os.Remove(fmt.Sprintf("%s.key", name))
 	return os.Remove(name)
 }
 
-func (fs *stdFs) RemoveAll() error {
+// RemoveAll deletes all files in the directory managed by this StandardFS.
+// Warning that if you put files in this directory that were not created by
+// StandardFS they will also be deleted.
+func (fs *StandardFS) RemoveAll() error {
 	if err := os.RemoveAll(fs.root); err != nil {
 		return err
 	}
 	return fs.init()
 }
 
-func (fs *stdFs) AccessTimes(name string) (rt, wt time.Time, err error) {
+// AccessTimes returns atime and mtime for the given File.Name() returned by Create().
+func (fs *StandardFS) AccessTimes(name string) (rt, wt time.Time, err error) {
 	fi, err := os.Stat(name)
 	if err != nil {
 		return rt, wt, err
@@ -139,7 +174,8 @@ func (fs *stdFs) AccessTimes(name string) (rt, wt time.Time, err error) {
 	return atime.Get(fi), fi.ModTime(), nil
 }
 
-func (fs *stdFs) Stat(name string) (FileInfo, error) {
+// Stat returns FileInfo for the given File.Name() returned by Create().
+func (fs *StandardFS) Stat(name string) (FileInfo, error) {
 	stat, err := os.Stat(name)
 	if err != nil {
 		return FileInfo{}, err
@@ -150,17 +186,11 @@ func (fs *stdFs) Stat(name string) (FileInfo, error) {
 
 const (
 	saltSize    = 8
+	salt        = "xxxxxxxx" // this is only important for sizing now.
 	maxShort    = 20
 	shortPrefix = "s"
 	longPrefix  = "l"
 )
-
-func salt() string {
-	buf := bytes.NewBufferString("")
-	enc := base64.NewEncoder(base64.URLEncoding, buf)
-	io.CopyN(enc, rand.Reader, saltSize)
-	return buf.String()
-}
 
 func tob64(s string) string {
 	buf := bytes.NewBufferString("")
@@ -178,16 +208,27 @@ func fromb64(s string) string {
 	return out.String()
 }
 
-func (fs *stdFs) makeName(key string) (string, error) {
+// B64OrMD5HashEncodeKey converts a given key into a filesystem name-safe string
+// and returns true iff it can be reversed with B64DecodeKey.
+func B64OrMD5HashEncodeKey(key string) (string, bool) {
 	b64key := tob64(key)
 	// short name
 	if len(b64key) < maxShort {
-		return fmt.Sprintf("%s%s%s", shortPrefix, salt(), b64key), nil
+		return fmt.Sprintf("%s%s%s", shortPrefix, salt, b64key), true
 	}
 
 	// long name
 	hash := md5.Sum([]byte(key))
-	name := fmt.Sprintf("%s%s%x", longPrefix, salt(), hash[:])
+	return fmt.Sprintf("%s%s%x", longPrefix, salt, hash[:]), false
+}
+
+func (fs *StandardFS) makeName(key string) (string, error) {
+	name, decodable := fs.EncodeKey(key)
+	if decodable {
+		return name, nil
+	}
+
+	// Name is not decodeable, store it.
 	f, err := fs.create(fmt.Sprintf("%s.key", name))
 	if err != nil {
 		return "", err
@@ -197,10 +238,18 @@ func (fs *stdFs) makeName(key string) (string, error) {
 	return name, err
 }
 
-func (fs *stdFs) getKey(name string) (string, error) {
-	// short name
+// B64DecodeKey converts a string y into x st. y, ok = B64OrMD5HashEncodeKey(x), and ok = true.
+// Basically it should reverse B64OrMD5HashEncodeKey if B64OrMD5HashEncodeKey returned true.
+func B64DecodeKey(name string) (string, bool) {
 	if strings.HasPrefix(name, shortPrefix) {
-		return fromb64(strings.TrimPrefix(name, shortPrefix)[saltSize:]), nil
+		return fromb64(strings.TrimPrefix(name, shortPrefix)[saltSize:]), true
+	}
+	return "", false
+}
+
+func (fs *StandardFS) getKey(name string) (string, error) {
+	if key, ok := fs.DecodeKey(name); ok {
+		return key, nil
 	}
 
 	// long name

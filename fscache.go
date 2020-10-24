@@ -34,11 +34,33 @@ type Cache interface {
 	Clean() error
 }
 
+// FSCache is a Cache which uses a Filesystem to read/write cached data.
 type FSCache struct {
 	mu      sync.RWMutex
 	files   map[string]fileStream
+	km      func(string) string
 	fs      FileSystem
 	haunter Haunter
+}
+
+// SetKeyMapper will use the given function to transform any given Cache key into the result of km(key).
+// This means that internally, the cache will only track km(key), and forget the original key. The consequences
+// of this are that Enumerate will return km(key) instead of key, and Filesystem will give km(key) to Create
+// and expect Reload() to return km(key).
+// The purpose of this function is so that the internally managed key can be converted to a string that is
+// allowed as a filesystem path.
+func (c *FSCache) SetKeyMapper(km func(string) string) *FSCache {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.km = km
+	return c
+}
+
+func (c *FSCache) mapKey(key string) string {
+	if c.km == nil {
+		return key
+	}
+	return c.km(key)
 }
 
 // ReadAtCloser is an io.ReadCloser, and an io.ReaderAt. It supports both so that Range
@@ -125,15 +147,19 @@ func (c *FSCache) load() error {
 	})
 }
 
+// Exists returns true iff this key is in the Cache (may not be finished streaming).
 func (c *FSCache) Exists(key string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	_, ok := c.files[key]
+	_, ok := c.files[c.mapKey(key)]
 	return ok
 }
 
+// Get obtains a ReadAtCloser for the given key, and may return a WriteCloser to write the original cache data
+// if this is a cache-miss.
 func (c *FSCache) Get(key string) (r ReadAtCloser, w io.WriteCloser, err error) {
 	c.mu.RLock()
+	key = c.mapKey(key)
 	f, ok := c.files[key]
 	if ok {
 		r, err = f.next()
@@ -168,8 +194,10 @@ func (c *FSCache) Get(key string) (r ReadAtCloser, w io.WriteCloser, err error) 
 	return r, f, err
 }
 
+// Remove removes the specified key from the cache.
 func (c *FSCache) Remove(key string) error {
 	c.mu.Lock()
+	key = c.mapKey(key)
 	f, ok := c.files[key]
 	delete(c.files, key)
 	c.mu.Unlock()
@@ -180,6 +208,7 @@ func (c *FSCache) Remove(key string) error {
 	return nil
 }
 
+// Clean resets the cache removing all keys and data.
 func (c *FSCache) Clean() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -204,6 +233,7 @@ func (a *accessor) EnumerateEntries(enumerator func(key string, e Entry) bool) {
 }
 
 func (a *accessor) RemoveFile(key string) {
+	key = a.c.mapKey(key)
 	f, ok := a.c.files[key]
 	delete(a.c.files, key)
 	if ok {
@@ -237,8 +267,8 @@ func (c *FSCache) oldFile(name string) fileStream {
 
 type reloadedFile struct {
 	handleCounter
-	fs   FileSystem
-	name string
+	fs             FileSystem
+	name           string
 	io.WriteCloser // nop Write & Close methods. will never be called.
 }
 
@@ -285,11 +315,13 @@ func (f *cachedFile) Close() error {
 	return f.stream.Close()
 }
 
+// CacheReader is a ReadAtCloser for a Cache key that also tracks open readers.
 type CacheReader struct {
 	ReadAtCloser
 	cnt *handleCounter
 }
 
+// Close frees the underlying ReadAtCloser and updates the open reader counter.
 func (r *CacheReader) Close() error {
 	defer r.cnt.dec()
 	return r.ReadAtCloser.Close()
@@ -313,7 +345,7 @@ func (r *CacheReader) Size() (int64, bool, error) {
 		return fi.Size(), true, nil
 
 	default:
-		return 0, false, fmt.Errorf("reader does not support stat.")
+		return 0, false, fmt.Errorf("reader does not support stat")
 	}
 }
 
