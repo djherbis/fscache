@@ -4,25 +4,32 @@ import (
 	"time"
 )
 
+// Entry represents a cached item.
 type Entry struct {
 	name  string
 	inUse bool
 }
 
+// InUse returns if this Cache entry is in use.
 func (e *Entry) InUse() bool {
 	return e.inUse
 }
 
+// Name returns the File.Name() of this entry.
 func (e *Entry) Name() string {
 	return e.name
 }
 
+// CacheAccessor implementors provide ways to observe and interact with
+// the cached entries, mainly used for cache-eviction.
 type CacheAccessor interface {
 	FileSystemStater
 	EnumerateEntries(enumerator func(key string, e Entry) bool)
 	RemoveFile(key string)
 }
 
+// Haunter implementors are used to perform cache-eviction (Next is how long to wait
+// until next evication, Haunt preforms the eviction).
 type Haunter interface {
 	Haunt(c CacheAccessor)
 	Next() time.Duration

@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// FileInfo is just a wrapper around os.FileInfo which includes atime.
 type FileInfo struct {
 	os.FileInfo
 	Atime time.Time
