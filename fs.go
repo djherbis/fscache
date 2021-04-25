@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/djherbis/atime.v1"
-	"gopkg.in/djherbis/stream.v1"
+	"github.com/djherbis/atime"
+	"github.com/djherbis/stream"
 )
 
 // FileSystemStater implementers can provide FileInfo data about a named resource.

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/djherbis/stream.v1"
+	"github.com/djherbis/stream"
 )
 
 type memFS struct {
