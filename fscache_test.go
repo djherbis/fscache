@@ -73,6 +73,9 @@ func TestHandler(t *testing.T) {
 				t.FailNow()
 			}
 			p, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf(err)
+			}
 			res.Body.Close()
 			if !bytes.Equal([]byte("Hello Client\n"), p) {
 				t.Errorf("unexpected response %s", string(p))
@@ -98,7 +101,7 @@ func TestMemFs(t *testing.T) {
 
 	r, err := fs.Open("test")
 	if err != nil {
-		t.Errorf("couldn't open test")
+		t.Errorf("couldn't open test: %v", err)
 	}
 	p, err := ioutil.ReadAll(r)
 	r.Close()
@@ -366,14 +369,15 @@ func TestReaper(t *testing.T) {
 	}
 
 	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond))
-
 	if err != nil {
-		t.Error(err.Error())
-		return
+		t.Fatalf(err)
 	}
 	defer c.Clean()
 
 	r, w, err := c.Get("stream")
+	if err != nil {
+		t.Fatalf(err)
+	}
 	w.Write([]byte("hello"))
 	w.Close()
 	io.Copy(ioutil.Discard, r)
