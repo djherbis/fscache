@@ -87,11 +87,10 @@ func (l *layeredCache) Exists(key string) bool {
 	return false
 }
 
-func (l *layeredCache) Clean() (err error) {
+func (l *layeredCache) Clean() (error) {
 	for _, layer := range l.layers {
-		er := layer.Clean()
-		if er != nil {
-			err = er
+		if err := layer.Clean(); err != nil {
+			return err
 		}
 	}
 	return nil
