@@ -74,7 +74,7 @@ func TestHandler(t *testing.T) {
 			}
 			p, err := ioutil.ReadAll(res.Body)
 			if err != nil {
-				t.Fatalf(err)
+				t.Fatal(err)
 			}
 			res.Body.Close()
 			if !bytes.Equal([]byte("Hello Client\n"), p) {
@@ -370,13 +370,13 @@ func TestReaper(t *testing.T) {
 
 	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond))
 	if err != nil {
-		t.Fatalf(err)
+		t.Fatal(err)
 	}
 	defer c.Clean()
 
 	r, w, err := c.Get("stream")
 	if err != nil {
-		t.Fatalf(err)
+		t.Fatal(err)
 	}
 	w.Write([]byte("hello"))
 	w.Close()
