@@ -101,9 +101,12 @@ func TestMemFs(t *testing.T) {
 
 	r, err := fs.Open("test")
 	if err != nil {
-		t.Errorf("couldn't open test: %v", err)
+		t.Errorf("failed Open: %v", err)
 	}
 	p, err := ioutil.ReadAll(r)
+	if err != nil {
+		t.Errorf("failed ioutil.ReadAll: %v", err)
+	}
 	r.Close()
 	if !bytes.Equal(p, []byte("hello")) {
 		t.Errorf("expected hello, got %s", string(p))
