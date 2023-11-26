@@ -71,7 +71,7 @@ func (l *layeredCache) Remove(key string) error {
 		grp.Add(1)
 		go func(layer Cache) {
 			defer grp.Done()
-			layer.Remove(key)
+			_ = layer.Remove(key)
 		}(l.layers[i])
 	}
 	grp.Wait()
@@ -87,7 +87,7 @@ func (l *layeredCache) Exists(key string) bool {
 	return false
 }
 
-func (l *layeredCache) Clean() (error) {
+func (l *layeredCache) Clean() error {
 	for _, layer := range l.layers {
 		if err := layer.Clean(); err != nil {
 			return err

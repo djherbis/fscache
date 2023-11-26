@@ -19,8 +19,15 @@ func createFile(name string) (*os.File, error) {
 }
 
 func init() {
-	c, _ := NewCache(NewMemFs(), nil)
-	go ListenAndServe(c, "localhost:10000")
+	c, err := NewCache(NewMemFs(), nil)
+	if err != nil {
+		panic(err)
+	}
+	go func() {
+		if err := ListenAndServe(c, "localhost:10000"); err != nil {
+			panic(err)
+		}
+	}()
 }
 
 func testCaches(t *testing.T, run func(c Cache)) {
