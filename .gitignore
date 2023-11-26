@@ -23,3 +23,6 @@ go.work
 .idea/
 *.iml
 
+cache*/
+server/
+
