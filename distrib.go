@@ -53,10 +53,9 @@ func (d *distrib) GetCache(key string) Cache {
 // It continues to clean even if one of the caches returns an error,
 // but will return the first error encountered.
 func (d *distrib) Clean() error {
-	var err1, err2 error
+	var err1 error
 	for _, c := range d.caches {
-		err2 = c.Clean()
-		if err2 != nil && err1 == nil {
+		if err2 := c.Clean(); err2 != nil && err1 == nil {
 			err1 = err2
 		}
 	}
