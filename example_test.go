@@ -18,6 +18,7 @@ func Example() {
 	}
 
 	// wipe the cache when done
+	defer os.RemoveAll("./cache")
 	defer c.Clean()
 
 	// Get() and it's streams can be called concurrently but just for example:
@@ -49,6 +50,7 @@ func ExampleHandler() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+	defer os.RemoveAll("./server")
 	defer c.Clean()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

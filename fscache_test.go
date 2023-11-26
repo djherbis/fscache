@@ -29,6 +29,7 @@ func testCaches(t *testing.T, run func(c Cache)) {
 		t.Error(err.Error())
 		return
 	}
+	t.Cleanup(func() { os.RemoveAll("./cache") })
 	run(c)
 
 	c, err = NewCache(NewMemFs(), NewReaper(time.Hour, time.Hour))
@@ -48,6 +49,7 @@ func testCaches(t *testing.T, run func(c Cache)) {
 	run(rc)
 
 	fs, _ := NewFs("./cachex", 0700)
+	t.Cleanup(func() { os.RemoveAll("./cachex") })
 	fs.EncodeKey = IdentityCodeKey
 	fs.DecodeKey = IdentityCodeKey
 	ck, _ := NewCache(fs, NewReaper(time.Hour, time.Hour))
@@ -116,6 +118,7 @@ func TestMemFs(t *testing.T) {
 
 func TestLoadCleanup1(t *testing.T) {
 	os.Mkdir("./cache6", 0700)
+	t.Cleanup(func() { os.RemoveAll("./cache6") })
 	f, err := createFile(filepath.Join("./cache6", "s11111111"+tob64("test")))
 	if err != nil {
 		t.Error(err.Error())
@@ -159,6 +162,7 @@ func TestLoadCleanup2(t *testing.T) {
 	name1 := fmt.Sprintf("%s%s%x", longPrefix, "11111111", hash[:])
 
 	os.Mkdir("./cache7", 0700)
+	t.Cleanup(func() { os.RemoveAll("./cache7") })
 	f, err := createFile(filepath.Join("./cache7", name2))
 	if err != nil {
 		t.Error(err.Error())
@@ -263,6 +267,7 @@ func TestLRUHaunterMaxItems(t *testing.T) {
 		t.Error(err.Error())
 		t.FailNow()
 	}
+	t.Cleanup(func() { os.RemoveAll("./cache1") })
 
 	c, err := NewCacheWithHaunter(fs, NewLRUHaunterStrategy(NewLRUHaunter(3, 0, 400*time.Millisecond)))
 
@@ -319,6 +324,7 @@ func TestLRUHaunterMaxSize(t *testing.T) {
 		t.Error(err.Error())
 		t.FailNow()
 	}
+	t.Cleanup(func() { os.RemoveAll("./cache1") })
 
 	c, err := NewCacheWithHaunter(fs, NewLRUHaunterStrategy(NewLRUHaunter(0, 24, 400*time.Millisecond)))
 
@@ -370,6 +376,7 @@ func TestReaper(t *testing.T) {
 		t.Error(err.Error())
 		t.FailNow()
 	}
+	t.Cleanup(func() { os.RemoveAll("./cache1") })
 
 	c, err := NewCache(fs, NewReaper(0*time.Second, 100*time.Millisecond))
 	if err != nil {
