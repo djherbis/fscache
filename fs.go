@@ -97,14 +97,14 @@ func (fs *StandardFS) Reload(add func(key, name string)) error {
 
 		key, err := fs.getKey(f.Name())
 		if err != nil {
-			fs.Remove(filepath.Join(fs.root, f.Name()))
+			_ = fs.Remove(filepath.Join(fs.root, f.Name()))
 			continue
 		}
 		fi, ok := addfiles[key]
 
 		if !ok || fi.ModTime().Before(f.ModTime()) {
 			if ok {
-				fs.Remove(fi.Name())
+				_ = fs.Remove(fi.Name())
 			}
 			addfiles[key] = struct {
 				os.FileInfo
@@ -114,7 +114,7 @@ func (fs *StandardFS) Reload(add func(key, name string)) error {
 				key:      key,
 			}
 		} else {
-			fs.Remove(f.Name())
+			_ = fs.Remove(f.Name())
 		}
 
 	}
@@ -195,8 +195,8 @@ const (
 func tob64(s string) string {
 	buf := bytes.NewBufferString("")
 	enc := base64.NewEncoder(base64.URLEncoding, buf)
-	enc.Write([]byte(s))
-	enc.Close()
+	_, _ = enc.Write([]byte(s))
+	_ = enc.Close()
 	return buf.String()
 }
 
@@ -204,7 +204,7 @@ func fromb64(s string) string {
 	buf := bytes.NewBufferString(s)
 	dec := base64.NewDecoder(base64.URLEncoding, buf)
 	out := bytes.NewBufferString("")
-	io.Copy(out, dec)
+	_, _ = io.Copy(out, dec)
 	return out.String()
 }
 

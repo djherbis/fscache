@@ -184,8 +184,8 @@ func (c *FSCache) Get(key string) (r ReadAtCloser, w io.WriteCloser, err error) 
 
 	r, err = f.next()
 	if err != nil {
-		f.Close()
-		c.fs.Remove(f.Name())
+		_ = f.Close()
+		_ = c.fs.Remove(f.Name())
 		return nil, nil, err
 	}
 
@@ -237,7 +237,7 @@ func (a *accessor) RemoveFile(key string) {
 	f, ok := a.c.files[key]
 	delete(a.c.files, key)
 	if ok {
-		a.c.fs.Remove(f.Name())
+		_ = a.c.fs.Remove(f.Name())
 	}
 }
 

@@ -20,7 +20,7 @@ type Distributor interface {
 // stdDistribution distributes the keyspace evenly.
 func stdDistribution(key string, n uint64) uint64 {
 	h := sha1.New()
-	io.WriteString(h, key)
+	_, _ = io.WriteString(h, key)
 	buf := bytes.NewBuffer(h.Sum(nil)[:8])
 	i, _ := binary.ReadUvarint(buf)
 	return i % n
@@ -49,12 +49,17 @@ func (d *distrib) GetCache(key string) Cache {
 	return d.caches[d.distribution(key, d.size)]
 }
 
-// BUG(djherbis): Return an error if cleaning fails
+// Clean cleans all the caches this Distributor manages.
+// It continues to clean even if one of the caches returns an error,
+// but will return the first error encountered.
 func (d *distrib) Clean() error {
+	var err1 error
 	for _, c := range d.caches {
-		c.Clean()
+		if err2 := c.Clean(); err2 != nil && err1 == nil {
+			err1 = err2
+		}
 	}
-	return nil
+	return err1
 }
 
 // NewPartition returns a Cache which uses the Caches defined by the passed Distributor.

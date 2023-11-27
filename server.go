@@ -54,8 +54,8 @@ func getKey(r io.Reader) string {
 
 func sendKey(w io.Writer, key string) {
 	enc := newEncoder(w)
-	enc.Write([]byte(key))
-	enc.Close()
+	_, _ = enc.Write([]byte(key))
+	_ = enc.Close()
 }
 
 func (s *server) Serve(c net.Conn) {
@@ -66,11 +66,11 @@ func (s *server) Serve(c net.Conn) {
 	case actionGet:
 		s.get(c, getKey(c))
 	case actionRemove:
-		s.c.Remove(getKey(c))
+		_ = s.c.Remove(getKey(c))
 	case actionExists:
 		s.exists(c, getKey(c))
 	case actionClean:
-		s.c.Clean()
+		_ = s.c.Clean()
 	}
 }
 
