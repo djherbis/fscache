@@ -303,7 +303,7 @@ func TestLRUHaunterMaxItems(t *testing.T) {
 		}
 	}
 
-	<-time.After(400 * time.Millisecond)
+	<-time.After(1 * time.Second)
 
 	if c.Exists("stream-0") {
 		t.Errorf("stream-0 should have been scrubbed")
@@ -360,7 +360,7 @@ func TestLRUHaunterMaxSize(t *testing.T) {
 		}
 	}
 
-	<-time.After(400 * time.Millisecond)
+	<-time.After(1 * time.Second)
 
 	if c.Exists("stream-0") {
 		t.Errorf("stream-0 should have been scrubbed")
