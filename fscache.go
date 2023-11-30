@@ -194,6 +194,52 @@ func (c *FSCache) Get(key string) (r ReadAtCloser, w io.WriteCloser, err error) 
 	return r, f, err
 }
 
+// MapFile maps the file at fp into the cache. This mechanism is useful
+// with a StandardFS, because it avoids a superfluous copy operation
+// when the file already exists on disk. For other file system implementations,
+// the file contents are simply copied into the cache using io.Copy.
+//
+// When FSCache.Remove or FSCache.Clean are invoked (including indirectly via
+// a Haunter), the cache entry for the mapped file is removed, but the file
+// itself will not be deleted from disk.
+func (c *FSCache) MapFile(fp string) error {
+	c.mu.RLock()
+
+	key := c.mapKey(fp)
+	if _, ok := c.files[key]; ok {
+		c.mu.RUnlock()
+		return fmt.Errorf("key %s already exists in cache", key)
+	}
+	c.mu.RUnlock()
+	c.mu.Lock()
+	if _, ok := c.fs.(*StandardFS); !ok {
+		// It's not a StandardFS, so we need to copy the file into the cache.
+		f, err := c.newFile(key)
+		if err != nil {
+			c.mu.Unlock()
+			return err
+		}
+
+		// The copy operation could take a while, we don't want to be locked.
+		// Not entirely clear if this is the correct thing to do.
+		c.mu.Unlock()
+		if err = copyFileTo(f, fp); err != nil {
+			return err
+		}
+
+		c.mu.RLock()
+		c.files[key] = f
+		c.mu.RUnlock()
+		return nil
+	}
+
+	// It's a StandardFS, so we can just map in the existing file.
+	f := c.mappedFile(fp)
+	c.files[key] = f
+	c.mu.Unlock()
+	return nil
+}
+
 // Remove removes the specified key from the cache.
 func (c *FSCache) Remove(key string) error {
 	c.mu.Lock()
@@ -290,6 +336,25 @@ func (f *reloadedFile) next() (*CacheReader, error) {
 	}, err
 }
 
+type mappedFile struct {
+	reloadedFile
+}
+
+// remove is a no-op, because we don't want the mapped
+// file to ever be deleted by fscache.
+func (f *mappedFile) remove() error {
+	return nil
+}
+
+func (c *FSCache) mappedFile(name string) fileStream {
+	return &mappedFile{
+		reloadedFile: reloadedFile{
+			fs:   c.fs,
+			name: name,
+		},
+	}
+}
+
 func (f *cachedFile) Name() string { return f.stream.Name() }
 
 func (f *cachedFile) remove() error { return f.stream.Remove() }
@@ -370,4 +435,20 @@ func (h *handleCounter) InUse() bool {
 
 func (h *handleCounter) waitUntilFree() {
 	h.grp.Wait()
+}
+
+// copyFileTo copies the file at file path fp into dst.
+func copyFileTo(dst io.WriteCloser, fp string) error {
+	f, err := os.Open(fp)
+	if err != nil {
+		_ = dst.Close()
+		return err
+	}
+	defer f.Close()
+
+	if _, err = io.Copy(dst, f); err != nil {
+		_ = dst.Close()
+		return err
+	}
+	return dst.Close()
 }
