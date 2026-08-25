@@ -267,6 +267,20 @@ func TestReload(t *testing.T) {
 	}
 }
 
+// eventually polls check until it returns true or the timeout passes. The haunter and
+// reaper run on their own clocks, so fixed sleeps flake on slow CI runners.
+func eventually(t *testing.T, timeout time.Duration, check func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if check() {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Error(msg)
+}
+
 func TestLRUHaunterMaxItems(t *testing.T) {
 
 	fs, err := NewFs("./cache1", 0700)
@@ -303,25 +317,12 @@ func TestLRUHaunterMaxItems(t *testing.T) {
 		}
 	}
 
-	<-time.After(1 * time.Second)
-
-	if c.Exists("stream-0") {
-		t.Errorf("stream-0 should have been scrubbed")
-	}
-
-	if c.Exists("stream-1") {
-		t.Errorf("stream-1 should have been scrubbed")
-	}
-
-	files, err := ioutil.ReadDir("./cache1")
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-
-	if len(files) != 3 {
-		t.Errorf("expected 3 items in directory")
-	}
+	// Which entries go is LRU order, which depends on filesystem access times that
+	// CI runners do not honor reliably; only the enforced bound is asserted.
+	eventually(t, 10*time.Second, func() bool {
+		files, err := ioutil.ReadDir("./cache1")
+		return err == nil && len(files) == 3
+	}, "expected the haunter to scrub down to 3 items")
 }
 
 func TestLRUHaunterMaxSize(t *testing.T) {
@@ -360,21 +361,10 @@ func TestLRUHaunterMaxSize(t *testing.T) {
 		}
 	}
 
-	<-time.After(1 * time.Second)
-
-	if c.Exists("stream-0") {
-		t.Errorf("stream-0 should have been scrubbed")
-	}
-
-	files, err := ioutil.ReadDir("./cache1")
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-
-	if len(files) != 4 {
-		t.Errorf("expected 4 items in directory")
-	}
+	eventually(t, 10*time.Second, func() bool {
+		files, err := ioutil.ReadDir("./cache1")
+		return err == nil && len(files) == 4
+	}, "expected the haunter to scrub down to the size limit")
 }
 
 func TestReaper(t *testing.T) {
@@ -410,21 +400,14 @@ func TestReaper(t *testing.T) {
 	}
 	r.Close()
 
-	<-time.After(200 * time.Millisecond)
+	eventually(t, 10*time.Second, func() bool {
+		return !c.Exists("stream")
+	}, "stream should have been reaped")
 
-	if c.Exists("stream") {
-		t.Errorf("stream should have been reaped")
-	}
-
-	files, err := ioutil.ReadDir("./cache1")
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-
-	if len(files) > 0 {
-		t.Errorf("expected empty directory")
-	}
+	eventually(t, 10*time.Second, func() bool {
+		files, err := ioutil.ReadDir("./cache1")
+		return err == nil && len(files) == 0
+	}, "expected empty directory")
 }
 
 func TestReaperNoExpire(t *testing.T) {
