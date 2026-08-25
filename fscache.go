@@ -1,6 +1,7 @@
 package fscache
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -244,6 +245,9 @@ func (a *accessor) RemoveFile(key string) {
 type cachedFile struct {
 	handleCounter
 	stream *stream.Stream
+
+	mu       sync.RWMutex
+	closeErr error
 }
 
 func (c *FSCache) newFile(name string) (fileStream, error) {
@@ -297,13 +301,28 @@ func (f *cachedFile) remove() error { return f.stream.Remove() }
 func (f *cachedFile) next() (*CacheReader, error) {
 	reader, err := f.stream.NextReader()
 	if err != nil {
-		return nil, err
+		return nil, f.replaceCanceled(err)
 	}
 	f.inc()
 	return &CacheReader{
 		ReadAtCloser: reader,
 		cnt:          &f.handleCounter,
+		closeErr:     f.replaceCanceled,
 	}, nil
+}
+
+// replaceCanceled maps the generic cancellation sentinel to the cause passed to
+// CloseWithError, so readers and late Gets learn why the stream ended.
+func (f *cachedFile) replaceCanceled(err error) error {
+	if err == nil || !errors.Is(err, stream.ErrCanceled) {
+		return err
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.closeErr != nil {
+		return f.closeErr
+	}
+	return err
 }
 
 func (f *cachedFile) Write(p []byte) (int, error) {
@@ -315,10 +334,46 @@ func (f *cachedFile) Close() error {
 	return f.stream.Close()
 }
 
+// CloseWithError closes the writer. With a nil err it is equivalent to Close: readers
+// get a clean EOF and the entry becomes final. With a non-nil err it cancels the
+// stream instead, so blocked and future reads fail with err rather than reading a
+// truncated entry to EOF, the entry never reports a final size, and Get for this key
+// returns err until the entry is removed.
+func (f *cachedFile) CloseWithError(err error) error {
+	if err == nil {
+		return f.Close()
+	}
+	defer f.dec()
+	// Record the cause before Cancel: readers fail only after Cancel takes the stream
+	// lock, so any read that observes the cancellation also observes the cause.
+	f.mu.Lock()
+	f.closeErr = err
+	f.mu.Unlock()
+	return f.stream.Cancel()
+}
+
 // CacheReader is a ReadAtCloser for a Cache key that also tracks open readers.
 type CacheReader struct {
 	ReadAtCloser
-	cnt *handleCounter
+	cnt      *handleCounter
+	closeErr func(error) error
+}
+
+func (r *CacheReader) Read(p []byte) (int, error) {
+	n, err := r.ReadAtCloser.Read(p)
+	return n, r.replaceCanceled(err)
+}
+
+func (r *CacheReader) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.ReadAtCloser.ReadAt(p, off)
+	return n, r.replaceCanceled(err)
+}
+
+func (r *CacheReader) replaceCanceled(err error) error {
+	if r.closeErr == nil {
+		return err
+	}
+	return r.closeErr(err)
 }
 
 // Close frees the underlying ReadAtCloser and updates the open reader counter.
