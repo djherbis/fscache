@@ -1,7 +1,6 @@
 package fscache
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -245,9 +244,6 @@ func (a *accessor) RemoveFile(key string) {
 type cachedFile struct {
 	handleCounter
 	stream *stream.Stream
-
-	mu       sync.RWMutex
-	closeErr error
 }
 
 func (c *FSCache) newFile(name string) (fileStream, error) {
@@ -301,28 +297,13 @@ func (f *cachedFile) remove() error { return f.stream.Remove() }
 func (f *cachedFile) next() (*CacheReader, error) {
 	reader, err := f.stream.NextReader()
 	if err != nil {
-		return nil, f.replaceCanceled(err)
+		return nil, err
 	}
 	f.inc()
 	return &CacheReader{
 		ReadAtCloser: reader,
 		cnt:          &f.handleCounter,
-		closeErr:     f.replaceCanceled,
 	}, nil
-}
-
-// replaceCanceled maps the generic cancellation sentinel to the cause passed to
-// CloseWithError, so readers and late Gets learn why the stream ended.
-func (f *cachedFile) replaceCanceled(err error) error {
-	if err == nil || !errors.Is(err, stream.ErrCanceled) {
-		return err
-	}
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	if f.closeErr != nil {
-		return f.closeErr
-	}
-	return err
 }
 
 func (f *cachedFile) Write(p []byte) (int, error) {
@@ -344,36 +325,13 @@ func (f *cachedFile) CloseWithError(err error) error {
 		return f.Close()
 	}
 	defer f.dec()
-	// Record the cause before Cancel: readers fail only after Cancel takes the stream
-	// lock, so any read that observes the cancellation also observes the cause.
-	f.mu.Lock()
-	f.closeErr = err
-	f.mu.Unlock()
-	return f.stream.Cancel()
+	return f.stream.CancelWithErr(err)
 }
 
 // CacheReader is a ReadAtCloser for a Cache key that also tracks open readers.
 type CacheReader struct {
 	ReadAtCloser
-	cnt      *handleCounter
-	closeErr func(error) error
-}
-
-func (r *CacheReader) Read(p []byte) (int, error) {
-	n, err := r.ReadAtCloser.Read(p)
-	return n, r.replaceCanceled(err)
-}
-
-func (r *CacheReader) ReadAt(p []byte, off int64) (int, error) {
-	n, err := r.ReadAtCloser.ReadAt(p, off)
-	return n, r.replaceCanceled(err)
-}
-
-func (r *CacheReader) replaceCanceled(err error) error {
-	if r.closeErr == nil {
-		return err
-	}
-	return r.closeErr(err)
+	cnt *handleCounter
 }
 
 // Close frees the underlying ReadAtCloser and updates the open reader counter.
