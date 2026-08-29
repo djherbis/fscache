@@ -315,6 +315,19 @@ func (f *cachedFile) Close() error {
 	return f.stream.Close()
 }
 
+// CloseWithError closes the writer. With a nil err it is equivalent to Close: readers
+// get a clean EOF and the entry becomes final. With a non-nil err it cancels the
+// stream instead, so blocked and future reads fail with err rather than reading a
+// truncated entry to EOF, the entry never reports a final size, and Get for this key
+// returns err until the entry is removed.
+func (f *cachedFile) CloseWithError(err error) error {
+	if err == nil {
+		return f.Close()
+	}
+	defer f.dec()
+	return f.stream.CancelWithErr(err)
+}
+
 // CacheReader is a ReadAtCloser for a Cache key that also tracks open readers.
 type CacheReader struct {
 	ReadAtCloser

@@ -1,8 +1,8 @@
 module github.com/djherbis/fscache
 
-go 1.14
+go 1.19
 
 require (
 	github.com/djherbis/atime v1.1.0
-	github.com/djherbis/stream v1.4.0
+	github.com/djherbis/stream v1.5.0
 )

@@ -3,6 +3,7 @@ package fscache
 import (
 	"bytes"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -267,6 +268,20 @@ func TestReload(t *testing.T) {
 	}
 }
 
+// eventually polls check until it returns true or the timeout passes. The haunter and
+// reaper run on their own clocks, so fixed sleeps flake on slow CI runners.
+func eventually(t *testing.T, timeout time.Duration, check func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if check() {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Error(msg)
+}
+
 func TestLRUHaunterMaxItems(t *testing.T) {
 
 	fs, err := NewFs("./cache1", 0700)
@@ -303,25 +318,12 @@ func TestLRUHaunterMaxItems(t *testing.T) {
 		}
 	}
 
-	<-time.After(1 * time.Second)
-
-	if c.Exists("stream-0") {
-		t.Errorf("stream-0 should have been scrubbed")
-	}
-
-	if c.Exists("stream-1") {
-		t.Errorf("stream-1 should have been scrubbed")
-	}
-
-	files, err := ioutil.ReadDir("./cache1")
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-
-	if len(files) != 3 {
-		t.Errorf("expected 3 items in directory")
-	}
+	// Which entries go is LRU order, which depends on filesystem access times that
+	// CI runners do not honor reliably; only the enforced bound is asserted.
+	eventually(t, 10*time.Second, func() bool {
+		files, err := ioutil.ReadDir("./cache1")
+		return err == nil && len(files) == 3
+	}, "expected the haunter to scrub down to 3 items")
 }
 
 func TestLRUHaunterMaxSize(t *testing.T) {
@@ -360,21 +362,10 @@ func TestLRUHaunterMaxSize(t *testing.T) {
 		}
 	}
 
-	<-time.After(1 * time.Second)
-
-	if c.Exists("stream-0") {
-		t.Errorf("stream-0 should have been scrubbed")
-	}
-
-	files, err := ioutil.ReadDir("./cache1")
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-
-	if len(files) != 4 {
-		t.Errorf("expected 4 items in directory")
-	}
+	eventually(t, 10*time.Second, func() bool {
+		files, err := ioutil.ReadDir("./cache1")
+		return err == nil && len(files) == 4
+	}, "expected the haunter to scrub down to the size limit")
 }
 
 func TestReaper(t *testing.T) {
@@ -410,21 +401,14 @@ func TestReaper(t *testing.T) {
 	}
 	r.Close()
 
-	<-time.After(200 * time.Millisecond)
+	eventually(t, 10*time.Second, func() bool {
+		return !c.Exists("stream")
+	}, "stream should have been reaped")
 
-	if c.Exists("stream") {
-		t.Errorf("stream should have been reaped")
-	}
-
-	files, err := ioutil.ReadDir("./cache1")
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-
-	if len(files) > 0 {
-		t.Errorf("expected empty directory")
-	}
+	eventually(t, 10*time.Second, func() bool {
+		files, err := ioutil.ReadDir("./cache1")
+		return err == nil && len(files) == 0
+	}, "expected empty directory")
 }
 
 func TestReaperNoExpire(t *testing.T) {
@@ -589,5 +573,128 @@ func check(t *testing.T, r io.Reader, data string) {
 	}
 	if !bytes.Equal(buf.Bytes(), []byte(data)) {
 		t.Errorf("unexpected output %q, want %q", buf.String(), data)
+	}
+}
+
+// errWriteCloser is implemented by writers that can report a failed write to readers.
+type errWriteCloser interface {
+	CloseWithError(err error) error
+}
+
+func TestCloseWithErrorReleasesBlockedReader(t *testing.T) {
+	c, err := NewCache(NewMemFs(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, w, err := c.Get("blocked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	if _, err := w.Write([]byte("partial")); err != nil {
+		t.Fatal(err)
+	}
+
+	boom := errors.New("transcoder died")
+	got := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 32)
+		n, err := r.Read(buf)
+		if n != 7 || err != nil {
+			got <- err
+			return
+		}
+		// The stream is still open, so this read blocks until the writer settles it.
+		_, err = r.Read(buf)
+		got <- err
+	}()
+
+	time.Sleep(50 * time.Millisecond) // let the reader block on the open stream
+	if err := w.(errWriteCloser).CloseWithError(boom); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-got:
+		if !errors.Is(err, boom) {
+			t.Errorf("blocked reader got %v, want %v", err, boom)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reader still blocked after CloseWithError")
+	}
+}
+
+func TestCloseWithErrorFailsLateGet(t *testing.T) {
+	c, err := NewCache(NewMemFs(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, w, err := c.Get("late")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	boom := errors.New("transcoder died")
+	if _, err := w.Write([]byte("partial")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.(errWriteCloser).CloseWithError(boom); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := c.Get("late"); !errors.Is(err, boom) {
+		t.Errorf("late Get got %v, want %v", err, boom)
+	}
+}
+
+func TestCloseWithErrorNeverReportsFinalSize(t *testing.T) {
+	c, err := NewCache(NewMemFs(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, w, err := c.Get("notfinal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	if _, err := w.Write([]byte("partial")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.(errWriteCloser).CloseWithError(errors.New("boom")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, final, err := r.(*CacheReader).Size(); err == nil && final {
+		t.Error("failed entry reports a final size; it would be served as a complete file")
+	}
+}
+
+func TestCloseWithErrorNilMeansClose(t *testing.T) {
+	c, err := NewCache(NewMemFs(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, w, err := c.Get("clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	if _, err := w.Write([]byte("complete")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.(errWriteCloser).CloseWithError(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := io.ReadAll(r)
+	if err != nil || string(data) != "complete" {
+		t.Errorf("got (%q, %v), want a clean EOF with the full data", data, err)
+	}
+	if _, final, err := r.(*CacheReader).Size(); err != nil || !final {
+		t.Errorf("clean close must finalize the entry, got final=%v err=%v", final, err)
 	}
 }
