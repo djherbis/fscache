@@ -68,6 +68,27 @@ func testCaches(t *testing.T, run func(c Cache)) {
 	run(ck)
 }
 
+func TestPacketReadAt(t *testing.T) {
+	var buf bytes.Buffer
+	enc := newEncoder(&buf)
+	if _, err := enc.Write([]byte("hello world")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := enc.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	dec := newDecoder(bytes.NewReader(buf.Bytes()))
+	p := make([]byte, 5)
+	n, err := dec.ReadAt(p, 6)
+	if err != nil && err != io.EOF {
+		t.Fatalf("ReadAt: %v", err)
+	}
+	if got := string(p[:n]); got != "world" {
+		t.Fatalf("ReadAt = %q, want %q", got, "world")
+	}
+}
+
 func TestHandler(t *testing.T) {
 	testCaches(t, func(c Cache) {
 		defer c.Clean()
