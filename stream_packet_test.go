@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"testing"
 	"time"
@@ -85,7 +84,7 @@ func TestRemotePacketContents(t *testing.T) {
 						written <- err
 					}()
 				}
-				got, err := ioutil.ReadAll(r)
+				got, err := io.ReadAll(r)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -99,7 +98,7 @@ func TestRemotePacketContents(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer local.Close()
-				stored, err := ioutil.ReadAll(local)
+				stored, err := io.ReadAll(local)
 				if err != nil || !bytes.Equal(stored, payload) {
 					t.Fatalf("stored %d bytes, want %d: %v", len(stored), len(payload), err)
 				}
@@ -127,7 +126,7 @@ func TestPacketReaderShortReads(t *testing.T) {
 	if n, err := io.ReadFull(r, first); n != len(first) || err != nil {
 		t.Fatalf("short read = (%d, %v)", n, err)
 	}
-	rest, err := ioutil.ReadAll(r)
+	rest, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
