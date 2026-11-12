@@ -15,7 +15,8 @@ type encoder interface {
 }
 
 type pktReader struct {
-	dec decoder
+	dec     decoder
+	pending []byte
 }
 
 type pktWriter struct {
@@ -35,15 +36,25 @@ func (t *pktReader) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (t *pktReader) Read(p []byte) (int, error) {
-	var pkt packet
-	err := t.dec.Decode(&pkt)
-	if err != nil {
-		return 0, err
+	if len(p) == 0 {
+		return 0, nil
 	}
-	if pkt.Err == eof {
-		return 0, io.EOF
+	for len(t.pending) == 0 {
+		var pkt packet
+		if err := t.dec.Decode(&pkt); err != nil {
+			return 0, err
+		}
+		if pkt.Err == eof {
+			return 0, io.EOF
+		}
+		t.pending = pkt.Data
 	}
-	return copy(p, pkt.Data), nil
+	n := copy(p, t.pending)
+	t.pending = t.pending[n:]
+	if len(t.pending) == 0 {
+		t.pending = nil
+	}
+	return n, nil
 }
 
 func (t *pktReader) Close() error {
