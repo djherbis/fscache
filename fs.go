@@ -104,7 +104,7 @@ func (fs *StandardFS) Reload(add func(key, name string)) error {
 
 		if !ok || fi.ModTime().Before(f.ModTime()) {
 			if ok {
-				_ = fs.Remove(fi.Name())
+				_ = fs.Remove(filepath.Join(fs.root, fi.Name()))
 			}
 			addfiles[key] = struct {
 				os.FileInfo
@@ -114,7 +114,7 @@ func (fs *StandardFS) Reload(add func(key, name string)) error {
 				key:      key,
 			}
 		} else {
-			_ = fs.Remove(f.Name())
+			_ = fs.Remove(filepath.Join(fs.root, f.Name()))
 		}
 
 	}
