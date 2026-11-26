@@ -149,6 +149,12 @@ func TestLoadCleanup1(t *testing.T) {
 	if !c.Exists("test") {
 		t.Errorf("expected test to exist")
 	}
+	if _, err := os.Stat(filepath.Join("./cache6", "s11111111"+tob64("test"))); !os.IsNotExist(err) {
+		t.Errorf("expected older cache file to be removed, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join("./cache6", "s22222222"+tob64("test"))); err != nil {
+		t.Errorf("expected newer cache file to remain: %v", err)
+	}
 }
 
 const longString = `
@@ -204,6 +210,16 @@ func TestLoadCleanup2(t *testing.T) {
 
 	if !c.Exists(longString) {
 		t.Errorf("expected test to exist")
+	}
+	for _, name := range []string{name2, name2 + ".key"} {
+		if _, err := os.Stat(filepath.Join("./cache7", name)); !os.IsNotExist(err) {
+			t.Errorf("expected older cache file %q to be removed, got %v", name, err)
+		}
+	}
+	for _, name := range []string{name1, name1 + ".key"} {
+		if _, err := os.Stat(filepath.Join("./cache7", name)); err != nil {
+			t.Errorf("expected newer cache file %q to remain: %v", name, err)
+		}
 	}
 }
 
